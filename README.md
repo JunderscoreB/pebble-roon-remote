@@ -50,4 +50,4 @@ Built with the Pebble C SDK and PebbleKit JS.
 **Build from source:**
 ```bash
 pebble build
-pebble install --emulator diorite --logs
+pebble install --emulator emery --logs
