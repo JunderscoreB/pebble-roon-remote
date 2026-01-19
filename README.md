@@ -12,6 +12,7 @@ Control your Roon music zones directly from your wrist. This app works with the 
 * **Low Latency:** Optimized for instant feedback using the PebbleDict API.
 
 ### 📥 [Download Latest Version (v0.90 Beta)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
+### 💬 [Join the Roon Community Discussion](https://community.roonlabs.com/t/pebble-smartwatch-app-and-corresponding-roon-extension/313874)
 
 ---
 
