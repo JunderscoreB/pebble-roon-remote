@@ -37,7 +37,12 @@
       var port = document.getElementById('port').value;
       
       var config = { "ip": ip, "port": port };
-      location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(config));
+      
+      // Look for the emulator's local server, or default to the physical phone app
+      var return_to = getQueryParam('return_to') || 'pebblejs://close#';
+      
+      // Send the data back to the correct location
+      location.href = return_to + encodeURIComponent(JSON.stringify(config));
     }
   </script>
 </body>
