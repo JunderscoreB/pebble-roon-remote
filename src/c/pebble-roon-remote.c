@@ -7,13 +7,15 @@
 #define KEY_IS_PLAYING 4
 #define KEY_VOLUME_VAL 5
 #define KEY_IS_FIXED 6
+#define KEY_ERROR 7  
 
-// VOLUME FEATURE DISABLED
-#define ENABLE_VOLUME 0
+// ENABLE VOLUME? (1 = Yes, 0 = No)
+#define ENABLE_VOLUME 1
 
 typedef enum {
   MODE_TRACK,
-  MODE_ZONE
+  MODE_ZONE,
+  MODE_ERROR
   #if ENABLE_VOLUME
   ,MODE_VOLUME
   #endif
@@ -29,27 +31,28 @@ static GBitmap *s_logo_bitmap = NULL;
 static TextLayer *s_track_layer = NULL;
 static TextLayer *s_artist_layer = NULL;
 static TextLayer *s_zone_layer = NULL;
-static Layer *s_status_layer = NULL; 
+static Layer *s_status_layer = NULL;
 
 #if ENABLE_VOLUME
 static TextLayer *s_vol_layer = NULL;
 static AppTimer *s_vol_revert_timer = NULL;
 static char s_vol_buf[32];
-static int s_volume = -1; 
+static int s_volume = -1;
 #endif
 
 // Timers
 static AppTimer *s_network_cooldown_timer = NULL;
 static AppTimer *s_playpause_delay_timer = NULL;
-static AppTimer *s_zone_revert_timer = NULL; 
+static AppTimer *s_zone_revert_timer = NULL;
 
 // Buffers
 static char s_zone_buf[64];
 
 // Data
-static bool s_is_playing = false; 
+static bool s_is_playing = false;
 static bool s_is_fixed = false;
 static bool s_network_ready = true;
+static bool s_is_error = false; 
 
 // --- FORWARD DECLARATIONS ---
 static void update_ui();
@@ -105,7 +108,23 @@ static void safe_set_text(TextLayer *layer, char *text) {
 static void update_ui() {
   if (!s_window_loaded) return;
 
-  // ZONE DISPLAY
+  // ERROR MODE HANDLING
+  if (s_mode == MODE_ERROR) {
+    safe_set_text(s_track_layer, "Bridge Not Found");
+    safe_set_text(s_artist_layer, "Press SELECT to retry");
+    safe_set_text(s_zone_layer, "Connection Error");
+
+    if (s_status_layer) layer_set_hidden(s_status_layer, true);
+
+    #if ENABLE_VOLUME
+    if (s_vol_layer) layer_set_hidden(text_layer_get_layer(s_vol_layer), true);
+    #endif
+    return;
+  }
+
+  // NORMAL MODES
+  if (s_status_layer) layer_set_hidden(s_status_layer, false);
+
   if (s_zone_layer) {
     safe_set_text(s_zone_layer, s_zone_buf);
     if (s_mode == MODE_ZONE) {
@@ -118,13 +137,12 @@ static void update_ui() {
   }
 
   #if ENABLE_VOLUME
-  // VOLUME DISPLAY
   if (s_vol_layer) {
     if (s_mode == MODE_VOLUME) {
       if (s_is_fixed) snprintf(s_vol_buf, sizeof(s_vol_buf), "Fixed");
       else if (s_volume == -1) snprintf(s_vol_buf, sizeof(s_vol_buf), "Vol: --");
       else snprintf(s_vol_buf, sizeof(s_vol_buf), "Vol: %d", s_volume);
-      
+
       text_layer_set_text(s_vol_layer, s_vol_buf);
       layer_set_hidden(text_layer_get_layer(s_vol_layer), false);
     } else {
@@ -134,11 +152,10 @@ static void update_ui() {
   #endif
 }
 
-// --- ZONE TIMER ---
+// --- TIMERS ---
 static void zone_revert_callback(void *data) {
   s_zone_revert_timer = NULL;
   if (s_mode == MODE_ZONE) {
-    APP_LOG(APP_LOG_LEVEL_INFO, "Zone Timeout: Reverting to TRACK");
     s_mode = MODE_TRACK;
     update_ui();
   }
@@ -157,7 +174,6 @@ static void cancel_zone_timer() {
 }
 
 #if ENABLE_VOLUME
-// --- VOLUME TIMER ---
 static void vol_revert_callback(void *data) {
   s_vol_revert_timer = NULL;
   if (s_mode == MODE_VOLUME) {
@@ -179,13 +195,13 @@ static void cancel_vol_timer() {
 }
 #endif
 
-// --- BUTTONS ---
+// --- BUTTON CONTROLS ---
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
-  if (s_mode == MODE_TRACK) {
-    send_command("previous");
-  } 
+  if (s_mode == MODE_ERROR) return;
+
+  if (s_mode == MODE_TRACK) send_command("previous");
   else if (s_mode == MODE_ZONE) {
-    reset_zone_timer(); 
+    reset_zone_timer();
     send_command("prev_zone");
   }
   #if ENABLE_VOLUME
@@ -197,11 +213,11 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
 }
 
 static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
-  if (s_mode == MODE_TRACK) {
-    send_command("next");
-  } 
+  if (s_mode == MODE_ERROR) return;
+
+  if (s_mode == MODE_TRACK) send_command("next");
   else if (s_mode == MODE_ZONE) {
-    reset_zone_timer(); 
+    reset_zone_timer();
     send_command("next_zone");
   }
   #if ENABLE_VOLUME
@@ -212,11 +228,17 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   #endif
 }
 
-// SELECT (Short)
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
+  if (s_mode == MODE_ERROR) {
+    safe_set_text(s_track_layer, "Retrying...");
+    safe_set_text(s_artist_layer, "Please wait...");
+    send_command("retry_connection");
+    return;
+  }
+
   if (s_mode == MODE_TRACK) {
     s_mode = MODE_ZONE;
-    reset_zone_timer(); 
+    reset_zone_timer();
   }
   else if (s_mode == MODE_ZONE) {
     cancel_zone_timer();
@@ -229,7 +251,7 @@ static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
     s_mode = MODE_ZONE;
   }
   #endif
-  
+
   update_ui();
 }
 
@@ -238,12 +260,13 @@ static void send_playpause_cb(void *data) {
   send_command("playpause");
 }
 
-// SELECT (Long) - Global Play/Pause
 static void select_long_click_handler(ClickRecognizerRef recognizer, void *context) {
+  if (s_mode == MODE_ERROR) return;
+
   vibes_short_pulse();
   if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
   s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
-  
+
   if (s_mode == MODE_ZONE) reset_zone_timer();
   #if ENABLE_VOLUME
   if (s_mode == MODE_VOLUME) reset_vol_timer();
@@ -257,10 +280,39 @@ static void click_config_provider(void *context) {
   window_long_click_subscribe(BUTTON_ID_SELECT, 800, select_long_click_handler, NULL);
 }
 
-// --- APP SETUP ---
+// --- TOUCH CONTROLS (SDK 4.9.169+) ---
+#ifdef PBL_TOUCH
+static void touch_handler(const TouchEvent *event, void *context) {
+  if (s_mode == MODE_ERROR) return;
 
+  // We only want to trigger action when the finger first touches the screen
+  if (event->type == TouchEvent_Touchdown) {
+    Layer *window_layer = window_get_root_layer(s_window);
+    GRect bounds = layer_get_bounds(window_layer);
+
+    // Play/Pause Hitbox (Height 50, horizontally centered)
+    GRect status_target = GRect(0, 110, bounds.size.w, 50);
+
+    // Grab the tap coordinates. 
+    GPoint tap_loc = GPoint(event->x, event->y);
+
+    if (grect_contains_point(&status_target, &tap_loc)) {
+      vibes_short_pulse(); 
+      if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
+      s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
+
+      if (s_mode == MODE_ZONE) reset_zone_timer();
+      #if ENABLE_VOLUME
+      if (s_mode == MODE_VOLUME) reset_vol_timer();
+      #endif
+    }
+  }
+}
+#endif
+
+// --- APP SETUP ---
 static void status_layer_update_proc(Layer *layer, GContext *ctx) {
-  if (!s_window_loaded) return;
+  if (!s_window_loaded || s_mode == MODE_ERROR) return;
   GRect bounds = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, GColorWhite);
   if (s_is_playing) {
@@ -280,6 +332,19 @@ static void status_layer_update_proc(Layer *layer, GContext *ctx) {
 static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
   if (!s_window_loaded) return;
   Tuple *t;
+
+  if ((t = dict_find(iterator, KEY_ERROR))) {
+    if (t->value->int32 == 1) {
+      s_mode = MODE_ERROR;
+      update_ui();
+      return;
+    } else {
+      if (s_mode == MODE_ERROR) s_mode = MODE_TRACK;
+    }
+  }
+
+  if (s_mode == MODE_ERROR) return;
+
   if ((t = dict_find(iterator, KEY_ZONE_NAME))) {
     snprintf(s_zone_buf, sizeof(s_zone_buf), "%s", t->value->cstring);
     if (s_zone_layer) safe_set_text(s_zone_layer, s_zone_buf);
@@ -290,14 +355,14 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     s_is_playing = (t->value->int32 == 1);
     if (s_status_layer) layer_mark_dirty(s_status_layer);
   }
-  
+
   #if ENABLE_VOLUME
   if ((t = dict_find(iterator, KEY_VOLUME_VAL))) {
     s_volume = get_tuple_int(t);
     if (s_mode == MODE_VOLUME) update_ui();
   }
   #endif
-  
+
   if ((t = dict_find(iterator, KEY_IS_FIXED))) s_is_fixed = (t->value->int32 == 1);
 }
 
@@ -314,7 +379,6 @@ static void window_load(Window *window) {
   bitmap_layer_set_alignment(s_logo_layer, GAlignCenter);
   layer_add_child(root, bitmap_layer_get_layer(s_logo_layer));
 
-  // REDUCED FONT SIZES
   s_track_layer = text_layer_create(GRect(0, 45, bounds.size.w, 55));
   text_layer_set_text(s_track_layer, "Loading...");
   text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
@@ -330,7 +394,7 @@ static void window_load(Window *window) {
   text_layer_set_background_color(s_artist_layer, GColorClear);
   text_layer_set_text_color(s_artist_layer, GColorWhite);
   layer_add_child(root, text_layer_get_layer(s_artist_layer));
-  
+
   s_status_layer = layer_create(GRect(0, 125, bounds.size.w, 20));
   layer_set_update_proc(s_status_layer, status_layer_update_proc);
   layer_add_child(root, s_status_layer);
@@ -342,28 +406,28 @@ static void window_load(Window *window) {
   text_layer_set_background_color(s_zone_layer, GColorClear);
   text_layer_set_text_color(s_zone_layer, GColorWhite);
   layer_add_child(root, text_layer_get_layer(s_zone_layer));
-  
+
   #if ENABLE_VOLUME
   s_vol_layer = text_layer_create(GRect(0, 45, bounds.size.w, 80));
   text_layer_set_text(s_vol_layer, "Vol: --");
-  text_layer_set_font(s_vol_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD)); 
+  text_layer_set_font(s_vol_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
   text_layer_set_text_alignment(s_vol_layer, GTextAlignmentCenter);
   text_layer_set_background_color(s_vol_layer, GColorBlack);
   text_layer_set_text_color(s_vol_layer, GColorWhite);
   layer_set_hidden(text_layer_get_layer(s_vol_layer), true);
   layer_add_child(root, text_layer_get_layer(s_vol_layer));
   #endif
-  
+
   s_window_loaded = true;
   APP_LOG(APP_LOG_LEVEL_INFO, "Window Load Complete");
 }
 
 static void window_unload(Window *window) {
-  s_window_loaded = false; 
+  s_window_loaded = false;
   if(s_network_cooldown_timer) app_timer_cancel(s_network_cooldown_timer);
   if(s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
   cancel_zone_timer();
-  
+
   #if ENABLE_VOLUME
   cancel_vol_timer();
   text_layer_destroy(s_vol_layer);
@@ -376,7 +440,7 @@ static void window_unload(Window *window) {
   layer_destroy(s_status_layer);
   bitmap_layer_destroy(s_logo_layer);
   gbitmap_destroy(s_logo_bitmap);
-  
+
   s_track_layer = NULL;
   s_artist_layer = NULL;
   s_zone_layer = NULL;
@@ -387,7 +451,17 @@ static void window_unload(Window *window) {
 
 static void init(void) {
   s_window = window_create();
+  
+  // Register physical buttons
   window_set_click_config_provider(s_window, click_config_provider);
+  
+  // Register raw touch screen service if SDK supports it
+  #ifdef PBL_TOUCH
+  if (touch_service_is_enabled()) {
+    touch_service_subscribe(touch_handler, NULL);
+  }
+  #endif
+  
   window_set_window_handlers(s_window, (WindowHandlers) { .load = window_load, .unload = window_unload });
   app_message_register_inbox_received(inbox_received_callback);
   app_message_open(512, 512);
@@ -395,6 +469,9 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  #ifdef PBL_TOUCH
+  touch_service_unsubscribe();
+  #endif
   window_destroy(s_window);
 }
 

@@ -1,8 +1,10 @@
 {
   "name": "pebble-roon-remote",
   "author": "J_B",
-  "version": "0.90.0",
-  "keywords": ["pebble-app"],
+  "version": "0.99.0",
+  "keywords": [
+    "pebble-app"
+  ],
   "private": true,
   "dependencies": {},
   "pebble": {
@@ -27,24 +29,25 @@
       "artist": 3,
       "is_playing": 4,
       "volume_val": 5,
-      "is_fixed": 6
+      "is_fixed": 6,
+      "error": 7
     },
     "resources": {
       "media": [
         {
           "type": "bitmap",
           "name": "IMAGE_LOGO",
-          "file": "resources/logo.png"
+          "file": "logo.png"
         },
         {
           "type": "bitmap",
           "name": "IMAGE_ICON",
-          "file": "resources/icon.png"
+          "file": "icon.png"
         },
         {
           "type": "bitmap",
           "name": "MENU_ICON",
-          "file": "resources/icon.png"
+          "file": "icon.png"
         }
       ]
     }

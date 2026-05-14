@@ -6,12 +6,13 @@ Control your Roon music zones directly from your wrist. This app works with the 
 
 ### ✨ Features
 * **Track Control:** Play, Pause, Next, Previous.
+* **Touch Support:** Capacitive touch support for Pebble Time 2 (Emery) and Pebble Round 2—simply tap the screen to Play/Pause!
 * **Zone Selection:** View and switch active Roon zones directly from the watch.
 * **Live Metadata:** See Artist, Track, and Zone Name in real-time.
 * **Smart Timeout:** The interface automatically reverts to the Track view after 4 seconds of inactivity.
 * **Low Latency:** Optimized for instant feedback using the PebbleDict API.
 
-### 📥 [Download Latest Version (v0.90 Beta)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
+### 📥 [Download Latest Version (v0.99.0 Release Candidate)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
 ### 💬 [Join the Roon Community Discussion](https://community.roonlabs.com/t/pebble-smartwatch-app-and-corresponding-roon-extension/313874)
 
 ---
@@ -38,6 +39,7 @@ This app requires a lightweight server to talk to Roon.
 
 ### 🎮 Controls
 
+* **Tap Screen (Touch devices):** Play / Pause.
 * **Select (Short Press):** Toggle between **Track Mode** and **Zone Mode**.
 * **Select (Long Press):** Play / Pause.
 * **Up / Down (Track Mode):** Previous / Next Track.

@@ -53,3 +53,12 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Ignore developer config overrides
+dev_config.json
+.lock-waf*
+
+# Ignore Pebble build folders
+build/
+.venv/
+ss/
