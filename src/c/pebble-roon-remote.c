@@ -280,12 +280,11 @@ static void click_config_provider(void *context) {
   window_long_click_subscribe(BUTTON_ID_SELECT, 800, select_long_click_handler, NULL);
 }
 
-// --- TOUCH CONTROLS (SDK 4.9.169+) ---
+// --- TOUCH CONTROLS (EMERY ONLY) ---
 #ifdef PBL_TOUCH
 static void touch_handler(const TouchEvent *event, void *context) {
   if (s_mode == MODE_ERROR) return;
 
-  // We only want to trigger action when the finger first touches the screen
   if (event->type == TouchEvent_Touchdown) {
     Layer *window_layer = window_get_root_layer(s_window);
     GRect bounds = layer_get_bounds(window_layer);
@@ -293,7 +292,6 @@ static void touch_handler(const TouchEvent *event, void *context) {
     // Play/Pause Hitbox (Height 50, horizontally centered)
     GRect status_target = GRect(0, 110, bounds.size.w, 50);
 
-    // Grab the tap coordinates. 
     GPoint tap_loc = GPoint(event->x, event->y);
 
     if (grect_contains_point(&status_target, &tap_loc)) {
@@ -306,6 +304,28 @@ static void touch_handler(const TouchEvent *event, void *context) {
       if (s_mode == MODE_VOLUME) reset_vol_timer();
       #endif
     }
+  }
+}
+#endif
+
+// --- ACCELEROMETER KNOCK CONTROLS (NON-TOUCH WATCHES ONLY) ---
+#ifndef PBL_TOUCH
+static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
+  if (s_mode == MODE_ERROR) return;
+
+  // A tap on the Z-axis means they knocked on the glass
+  if (axis == ACCEL_AXIS_Z) {
+    APP_LOG(APP_LOG_LEVEL_INFO, "Screen knock detected!");
+    vibes_short_pulse(); 
+    
+    // Trigger the exact same play/pause logic as a long-press or touch
+    if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
+    s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
+
+    if (s_mode == MODE_ZONE) reset_zone_timer();
+    #if ENABLE_VOLUME
+    if (s_mode == MODE_VOLUME) reset_vol_timer();
+    #endif
   }
 }
 #endif
@@ -455,11 +475,14 @@ static void init(void) {
   // Register physical buttons
   window_set_click_config_provider(s_window, click_config_provider);
   
-  // Register raw touch screen service if SDK supports it
+  // Register raw touch screen service if SDK supports it (Emery)
   #ifdef PBL_TOUCH
   if (touch_service_is_enabled()) {
     touch_service_subscribe(touch_handler, NULL);
   }
+  #else
+  // For older non-touch watches, use accelerometer knocking instead
+  accel_tap_service_subscribe(accel_tap_handler);
   #endif
   
   window_set_window_handlers(s_window, (WindowHandlers) { .load = window_load, .unload = window_unload });
@@ -471,6 +494,8 @@ static void init(void) {
 static void deinit(void) {
   #ifdef PBL_TOUCH
   touch_service_unsubscribe();
+  #else
+  accel_tap_service_unsubscribe();
   #endif
   window_destroy(s_window);
 }
