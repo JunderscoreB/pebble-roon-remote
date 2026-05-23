@@ -1,7 +1,7 @@
 {
   "name": "pebble-roon-remote",
   "author": "J_B",
-  "version": "0.99.1",
+  "version": "0.99.3",
   "keywords": [
     "pebble-app"
   ],
@@ -11,6 +11,9 @@
     "displayName": "Roon Remote",
     "uuid": "54d30c83-9b7e-4d43-9828-56784d650123",
     "sdkVersion": "3",
+    "capabilities": [
+      "configurable"
+    ],
     "targetPlatforms": [
       "aplite",
       "basalt",
