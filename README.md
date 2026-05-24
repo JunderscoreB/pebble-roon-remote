@@ -4,7 +4,7 @@
 
 Control your Roon music zones directly from your wrist. This app works with the Pebble web services and connects to your local Roon Core via a lightweight bridge extension.
 
-### ✨ Features
+### ⌚ Features
 * **Track Control:** Play, Pause, Next, Previous.
 * **Touch Support:** Capacitive touch support for Pebble Time 2 (Emery) and Pebble Round 2—simply tap the screen to Play/Pause!
 * **Zone Selection:** View and switch active Roon zones directly from the watch.
@@ -12,7 +12,7 @@ Control your Roon music zones directly from your wrist. This app works with the 
 * **Smart Timeout:** The interface automatically reverts to the Track view after 4 seconds of inactivity.
 * **Low Latency:** Optimized for instant feedback using the PebbleDict API.
 
-### 📥 [Download Latest Version (v0.99.0 Release Candidate)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
+### 🚀 [Download Latest Version (v0.99.2 Release Candidate)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
 ### 💬 [Join the Roon Community Discussion](https://community.roonlabs.com/t/pebble-smartwatch-app-and-corresponding-roon-extension/313874)
 
 ---
@@ -37,20 +37,23 @@ This app requires a lightweight server to talk to Roon.
 
 ---
 
-### 🎮 Controls
+### 🕹️ Controls
 
 * **Tap Screen (Touch devices):** Play / Pause.
 * **Select (Short Press):** Toggle between **Track Mode** and **Zone Mode**.
 * **Select (Long Press):** Play / Pause.
 * **Up / Down (Track Mode):** Previous / Next Track.
 * **Up / Down (Zone Mode):** Cycle through available Roon Zones.
+* **Up / Down (Volume Mode):** Adjust Volume (if enabled).
 
 ---
 
-### 🔨 Development
-Built with the Pebble C SDK and PebbleKit JS.
+### 🛠 For Developers
 
-**Build from source:**
-```bash
-pebble build
-pebble install --emulator emery --logs
+To test this watchapp locally without hardcoding your Roon Bridge IP address into the public source code:
+
+1. Copy the `dev_config.example.json` file in the root directory and rename it to `dev_config.json`.
+2. Update the `"ip"` field inside `dev_config.json` with your bridge's IP address.
+3. Run `pebble build`. Webpack will automatically bundle this IP into your build!
+
+*Note: `dev_config.json` is safely ignored by Git so your local network details will remain private.*
