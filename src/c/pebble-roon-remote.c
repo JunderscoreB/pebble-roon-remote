@@ -62,13 +62,11 @@ static int s_volume = -1;
 #endif
 
 // Timers & State
-static AppTimer *s_network_cooldown_timer = NULL;
 static AppTimer *s_playpause_delay_timer = NULL;
 static AppTimer *s_zone_revert_timer = NULL;
 
 static bool s_is_playing = false;
 static bool s_is_fixed = false;
-static bool s_network_ready = true;
 
 // Buffers
 static char s_track_buf[128] = "";
@@ -87,28 +85,14 @@ static int get_tuple_int(Tuple *t) {
   }
 }
 
-// --- NETWORK ---
-static void cooldown_cb(void *data) {
-  s_network_ready = true;
-  s_network_cooldown_timer = NULL;
-}
-
-static void trigger_cooldown() {
-  s_network_ready = false;
-  if (s_network_cooldown_timer) app_timer_cancel(s_network_cooldown_timer);
-  s_network_cooldown_timer = app_timer_register(250, cooldown_cb, NULL);
-}
-
+// THE FIX: The artificial 250ms throttle is completely removed. Fast presses map 1:1!
 static void send_command(char *cmd) {
   if (!s_window_loaded) return;
-  if (!s_network_ready) return;
 
   DictionaryIterator *iter;
-  AppMessageResult result = app_message_outbox_begin(&iter);
-  if (result == APP_MSG_OK) {
+  if (app_message_outbox_begin(&iter) == APP_MSG_OK) {
     dict_write_cstring(iter, KEY_COMMAND, cmd);
     app_message_outbox_send();
-    trigger_cooldown();
   }
 }
 
@@ -192,6 +176,7 @@ static void update_ui() {
     safe_set_text(s_track_layer, "Bridge Not Found");
     safe_set_text(s_artist_layer, "Press SELECT to retry");
     safe_set_text(s_zone_layer, "Connection Error");
+
     if (s_status_layer) layer_set_hidden(s_status_layer, true);
     #if ENABLE_VOLUME
     if (s_vol_layer) layer_set_hidden(text_layer_get_layer(s_vol_layer), true);
@@ -262,6 +247,7 @@ static void cancel_vol_timer() {
 #endif
 
 // --- BUTTON CONTROLS ---
+
 static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_ZONE) {
     cancel_zone_timer();
@@ -292,7 +278,12 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   #if ENABLE_VOLUME
   else if (s_mode == MODE_VOLUME) { 
     reset_vol_timer(); 
-    if (!s_is_fixed) send_command("vol_up"); 
+    if (!s_is_fixed) {
+      // THE FIX: Optimistic UI instantly changes the number visually before the server responds!
+      if (s_volume < 100) s_volume += 1; 
+      update_ui();
+      send_command("vol_up"); 
+    }
   }
   #endif
 }
@@ -309,7 +300,12 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   #if ENABLE_VOLUME
   else if (s_mode == MODE_VOLUME) { 
     reset_vol_timer(); 
-    if (!s_is_fixed) send_command("vol_down"); 
+    if (!s_is_fixed) {
+      // THE FIX: Optimistic UI instantly changes the number visually before the server responds!
+      if (s_volume > 0) s_volume -= 1;
+      update_ui();
+      send_command("vol_down"); 
+    }
   }
   #endif
 }
@@ -574,7 +570,6 @@ static void window_unload(Window *window) {
   s_window_loaded = false;
   
   if (s_play_path) { gpath_destroy(s_play_path); s_play_path = NULL; }
-  if (s_network_cooldown_timer) app_timer_cancel(s_network_cooldown_timer);
   if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
   
   stop_marquee();

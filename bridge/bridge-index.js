@@ -50,7 +50,6 @@ svc_status.set_status("Extension enabled", false);
 roon.start_discovery();
 
 // --- HELPER: BUILD STATUS JSON ---
-// By centralizing this, we can instantly return fresh data after ANY command!
 function getZone() {
     if (!core) return null;
     if (!current_zone_id || !zones[current_zone_id]) {
@@ -113,10 +112,16 @@ app.get('/previous', (req, res) => {
     res.json(buildStatus());
 });
 
+// THE FIX: Absolute mathematically calculated volume for perfect 1-point increments
 app.get('/vol_up', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", 1);
+        var out = z.outputs[0];
+        if (out.volume && out.volume.type !== 'fixed') {
+            var currentVol = out.volume.value || 0;
+            var maxVol = out.volume.max || 100;
+            core.services.RoonApiTransport.change_volume(out, "absolute", Math.min(currentVol + 1, maxVol));
+        }
     }
     res.json(buildStatus());
 });
@@ -124,7 +129,12 @@ app.get('/vol_up', (req, res) => {
 app.get('/vol_down', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", -1);
+        var out = z.outputs[0];
+        if (out.volume && out.volume.type !== 'fixed') {
+            var currentVol = out.volume.value || 0;
+            var minVol = out.volume.min || 0;
+            core.services.RoonApiTransport.change_volume(out, "absolute", Math.max(currentVol - 1, minVol));
+        }
     }
     res.json(buildStatus());
 });
@@ -136,7 +146,7 @@ app.get('/next_zone', (req, res) => {
         var nextIdx = (idx + 1) % keys.length;
         current_zone_id = keys[nextIdx];
     }
-    res.json(buildStatus()); // instantly returns new zone info!
+    res.json(buildStatus());
 });
 
 app.get('/prev_zone', (req, res) => {
@@ -146,7 +156,7 @@ app.get('/prev_zone', (req, res) => {
         var prevIdx = (idx - 1 + keys.length) % keys.length;
         current_zone_id = keys[prevIdx];
     }
-    res.json(buildStatus()); // instantly returns new zone info!
+    res.json(buildStatus()); 
 });
 
 // Start Server
