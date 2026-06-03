@@ -432,4 +432,152 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   if ((t = dict_find(iterator, KEY_TRACK))) {
     if (strcmp(s_track_buf, t->value->cstring) != 0) {
       snprintf(s_track_buf, sizeof(s_track_buf), "%s", t->value->cstring);
-      safe_set_text(
+      safe_set_text(s_track_layer, s_track_buf);
+      start_marquee(); 
+    }
+  }
+  
+  if ((t = dict_find(iterator, KEY_ARTIST))) {
+    if (strcmp(s_artist_buf, t->value->cstring) != 0) {
+      snprintf(s_artist_buf, sizeof(s_artist_buf), "%s", t->value->cstring);
+      safe_set_text(s_artist_layer, s_artist_buf);
+    }
+  }
+
+  if ((t = dict_find(iterator, KEY_IS_PLAYING))) {
+    s_is_playing = (get_tuple_int(t) == 1);
+    if (s_status_layer) layer_mark_dirty(s_status_layer);
+  }
+
+  #if ENABLE_VOLUME
+  if ((t = dict_find(iterator, KEY_VOLUME_VAL))) {
+    s_volume = get_tuple_int(t);
+    if (s_mode == MODE_VOLUME) update_ui();
+  }
+  #endif
+
+  if ((t = dict_find(iterator, KEY_IS_FIXED))) s_is_fixed = (get_tuple_int(t) == 1);
+}
+
+static void window_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(root);
+  window_set_background_color(window, GColorBlack);
+
+  s_play_path = gpath_create(&s_play_path_info);
+
+  s_logo_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_LOGO);
+  s_logo_layer = bitmap_layer_create(GRect(0, NATIVE_Y(5, 12), bounds.size.w, NATIVE_H(35, 35)));
+  bitmap_layer_set_background_color(s_logo_layer, GColorClear);
+  bitmap_layer_set_bitmap(s_logo_layer, s_logo_bitmap);
+  bitmap_layer_set_compositing_mode(s_logo_layer, GCompOpSet);
+  bitmap_layer_set_alignment(s_logo_layer, GAlignCenter);
+  layer_add_child(root, bitmap_layer_get_layer(s_logo_layer));
+
+  s_track_layer = text_layer_create(GRect(0, NATIVE_Y(36, 44), bounds.size.w, NATIVE_H(56, 56)));
+  text_layer_set_text(s_track_layer, "Loading...");
+  text_layer_set_text_alignment(s_track_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(s_track_layer, GTextOverflowModeTrailingEllipsis);
+  text_layer_set_background_color(s_track_layer, GColorClear);
+  text_layer_set_text_color(s_track_layer, GColorWhite);
+  layer_add_child(root, text_layer_get_layer(s_track_layer));
+
+  s_artist_layer = text_layer_create(GRect(0, NATIVE_Y(92, 100), bounds.size.w, NATIVE_H(42, 42)));
+  text_layer_set_text_alignment(s_artist_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(s_artist_layer, GTextOverflowModeTrailingEllipsis);
+  text_layer_set_background_color(s_artist_layer, GColorClear);
+  text_layer_set_text_color(s_artist_layer, GColorWhite);
+  layer_add_child(root, text_layer_get_layer(s_artist_layer));
+
+  s_status_layer = layer_create(GRect(0, NATIVE_Y(134, 138), bounds.size.w, NATIVE_H(16, 16)));
+  layer_set_update_proc(s_status_layer, status_layer_update_proc);
+  layer_add_child(root, s_status_layer);
+
+  s_zone_layer = text_layer_create(GRect(0, NATIVE_Y(150, 150), bounds.size.w, NATIVE_H(18, 24)));
+  text_layer_set_text(s_zone_layer, "Connecting...");
+  text_layer_set_text_alignment(s_zone_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(s_zone_layer, GTextOverflowModeTrailingEllipsis);
+  text_layer_set_background_color(s_zone_layer, GColorClear);
+  text_layer_set_text_color(s_zone_layer, GColorWhite);
+  layer_add_child(root, text_layer_get_layer(s_zone_layer));
+
+  #if ENABLE_VOLUME
+  s_vol_layer = text_layer_create(GRect(0, NATIVE_Y(45, 50), bounds.size.w, NATIVE_H(80, 80)));
+  text_layer_set_text(s_vol_layer, "Vol: --");
+  text_layer_set_font(s_vol_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
+  text_layer_set_text_alignment(s_vol_layer, GTextAlignmentCenter);
+  text_layer_set_background_color(s_vol_layer, GColorBlack);
+  text_layer_set_text_color(s_vol_layer, GColorWhite);
+  layer_set_hidden(text_layer_get_layer(s_vol_layer), true);
+  layer_add_child(root, text_layer_get_layer(s_vol_layer));
+  #endif
+
+  apply_fonts();
+  s_window_loaded = true;
+}
+
+static void window_unload(Window *window) {
+  s_window_loaded = false;
+  
+  if (s_play_path) { gpath_destroy(s_play_path); s_play_path = NULL; }
+  if (s_network_cooldown_timer) app_timer_cancel(s_network_cooldown_timer);
+  if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
+  
+  stop_marquee();
+  cancel_zone_timer();
+
+  #if ENABLE_VOLUME
+  cancel_vol_timer();
+  text_layer_destroy(s_vol_layer);
+  s_vol_layer = NULL;
+  #endif
+
+  text_layer_destroy(s_track_layer);
+  text_layer_destroy(s_artist_layer);
+  text_layer_destroy(s_zone_layer);
+  layer_destroy(s_status_layer);
+  bitmap_layer_destroy(s_logo_layer);
+  gbitmap_destroy(s_logo_bitmap);
+
+  s_track_layer = NULL;
+  s_artist_layer = NULL;
+  s_zone_layer = NULL;
+  s_status_layer = NULL;
+  s_logo_layer = NULL;
+  s_logo_bitmap = NULL;
+}
+
+static void init(void) {
+  if (persist_exists(PERSIST_KEY_FONT)) s_font_size = persist_read_int(PERSIST_KEY_FONT);
+  if (persist_exists(PERSIST_KEY_SCROLL)) s_enable_scroll = persist_read_bool(PERSIST_KEY_SCROLL);
+
+  s_window = window_create();
+  window_set_click_config_provider(s_window, click_config_provider);
+  
+  #ifdef PBL_TOUCH
+  if (touch_service_is_enabled()) touch_service_subscribe(touch_handler, NULL);
+  #else
+  accel_tap_service_subscribe(accel_tap_handler);
+  #endif
+  
+  window_set_window_handlers(s_window, (WindowHandlers) { .load = window_load, .unload = window_unload });
+  app_message_register_inbox_received(inbox_received_callback);
+  app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
+  
+  window_stack_push(s_window, true);
+}
+
+static void deinit(void) {
+  #ifdef PBL_TOUCH
+  touch_service_unsubscribe();
+  #else
+  accel_tap_service_unsubscribe();
+  #endif
+  window_destroy(s_window);
+}
+
+int main(void) {
+  init();
+  app_event_loop();
+  deinit();
+}
