@@ -7,13 +7,9 @@
   <style>
     body { font-family: sans-serif; padding: 20px; background: #222; color: #eee; }
     label { display: block; margin-bottom: 10px; font-weight: bold; }
-    input { width: 100%; padding: 10px; margin-bottom: 20px; border-radius: 5px; border: none; box-sizing: border-box; }
+    input, select { width: 100%; padding: 10px; margin-bottom: 20px; border-radius: 5px; border: none; box-sizing: border-box; font-size: 16px; }
     button { width: 100%; padding: 15px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-bottom: 10px; font-weight: bold; }
-    .btn-test { background: #4caf50; color: white; }
     .btn-save { background: #ff5722; color: white; }
-    #status-msg { margin-top: 15px; font-size: 18px; text-align: center; font-weight: bold; padding: 10px; border-radius: 5px; }
-    .success { background: rgba(76, 175, 80, 0.2); color: #4caf50; border: 1px solid #4caf50; }
-    .error { background: rgba(244, 67, 54, 0.2); color: #f44336; border: 1px solid #f44336; }
   </style>
 </head>
 <body>
@@ -24,11 +20,14 @@
   
   <label for="port">Port</label>
   <input type="text" id="port" placeholder="3000" value="3000" />
-  
-  <button class="btn-test" onclick="testConnection()">Test Connection</button>
-  <button class="btn-save" onclick="save()">Save to Watch</button>
 
-  <div id="status-msg"></div>
+  <label for="font-size">Font Size</label>
+  <select id="font-size">
+    <option value="large">Large</option>
+    <option value="normal">Normal</option>
+  </select>
+  
+  <button class="btn-save" onclick="save()">Save to Watch</button>
 
   <script>
     function getQueryParam(h) {
@@ -38,34 +37,14 @@
     
     document.getElementById('ip').value = getQueryParam('ip') || '';
     document.getElementById('port').value = getQueryParam('port') || '3000';
-
-    function testConnection() {
-      var ip = document.getElementById('ip').value;
-      var port = document.getElementById('port').value;
-      var msg = document.getElementById('status-msg');
-      
-      msg.textContent = "Pinging Bridge...";
-      msg.className = "";
-
-      fetch('http://' + ip + ':' + port + '/status')
-        .then(function(response) {
-          if (response.ok) {
-            msg.textContent = "✅ Bridge Active & Found!";
-            msg.className = "success";
-          } else {
-            msg.textContent = "⚠️ Found, but returned error code: " + response.status;
-            msg.className = "error";
-          }
-        })
-        .catch(function(err) {
-          msg.textContent = "❌ Bridge Not Found or Offline.";
-          msg.className = "error";
-          console.error("Connection error:", err);
-        });
-    }
+    document.getElementById('font-size').value = getQueryParam('font_size') || 'large';
 
     function save() {
-      var config = { "ip": document.getElementById('ip').value, "port": document.getElementById('port').value };
+      var config = { 
+        "ip": document.getElementById('ip').value, 
+        "port": document.getElementById('port').value,
+        "font_size": document.getElementById('font-size').value
+      };
       var return_to = getQueryParam('return_to') || 'pebblejs://close#';
       location.href = return_to + encodeURIComponent(JSON.stringify(config));
     }
