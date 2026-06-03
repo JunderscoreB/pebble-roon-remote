@@ -116,21 +116,19 @@ static void safe_set_text(TextLayer *layer, char *text) {
 }
 
 static void apply_fonts() {
-  // We explicitly removed the !s_window_loaded safety check here
-  // so the fonts can successfully load during the watch boot sequence!
   if (!s_track_layer || !s_artist_layer || !s_zone_layer) return;
   
   if (s_font_size == 2) { // LARGE
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
-    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28)); // Bumped from 24
+    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28)); 
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
   } else if (s_font_size == 1) { // NORMAL
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24)); // Bumped from 18
+    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24)); 
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
   } else { // SMALL
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
-    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18)); // Bumped from 14
+    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18)); 
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
   }
 }
@@ -145,7 +143,7 @@ static void stop_marquee() {
   if (s_track_layer && s_window_loaded) {
     Layer *root = window_get_root_layer(s_window);
     GRect bounds = layer_get_bounds(root);
-    // Y-axis adjusted for new tight layout
+    // Y-axis adjusted for tight layout
     layer_set_frame(text_layer_get_layer(s_track_layer), GRect(0, NATIVE_Y(36, 44), bounds.size.w, NATIVE_H(56, 56)));
     text_layer_set_text_alignment(s_track_layer, GTextAlignmentCenter);
   }
@@ -172,7 +170,7 @@ static void start_marquee() {
     text_layer_set_text_alignment(s_track_layer, GTextAlignmentLeft);
     Layer *t_layer = text_layer_get_layer(s_track_layer);
 
-    // Slide entirely across the screen (Y-axis updated)
+    // Slide entirely across the screen
     GRect start = GRect(bounds.size.w, NATIVE_Y(36, 44), text_size.w + 20, NATIVE_H(56, 56));
     GRect end = GRect(-text_size.w - 20, NATIVE_Y(36, 44), text_size.w + 20, NATIVE_H(56, 56));
 
@@ -452,7 +450,6 @@ static void window_load(Window *window) {
   bitmap_layer_set_alignment(s_logo_layer, GAlignCenter);
   layer_add_child(root, bitmap_layer_get_layer(s_logo_layer));
 
-  // The Y positioning is packed efficiently to leave space for multi-line Artist text
   s_track_layer = text_layer_create(GRect(0, NATIVE_Y(36, 44), bounds.size.w, NATIVE_H(56, 56)));
   text_layer_set_text(s_track_layer, "Loading...");
   text_layer_set_text_alignment(s_track_layer, GTextAlignmentCenter);
@@ -461,7 +458,6 @@ static void window_load(Window *window) {
   text_layer_set_text_color(s_track_layer, GColorWhite);
   layer_add_child(root, text_layer_get_layer(s_track_layer));
 
-  // Height expanded to 42px to allow up to two lines of Artist text to safely wrap
   s_artist_layer = text_layer_create(GRect(0, NATIVE_Y(92, 100), bounds.size.w, NATIVE_H(42, 42)));
   text_layer_set_text_alignment(s_artist_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(s_artist_layer, GTextOverflowModeTrailingEllipsis);
@@ -469,10 +465,6 @@ static void window_load(Window *window) {
   text_layer_set_text_color(s_artist_layer, GColorWhite);
   layer_add_child(root, text_layer_get_layer(s_artist_layer));
 
-  // Lock in the correct fonts BEFORE the UI is drawn on screen
-  apply_fonts();
-
-  // Status icon shifted slightly down to accommodate the taller artist box
   s_status_layer = layer_create(GRect(0, NATIVE_Y(134, 138), bounds.size.w, NATIVE_H(16, 16)));
   layer_set_update_proc(s_status_layer, status_layer_update_proc);
   layer_add_child(root, s_status_layer);
@@ -496,6 +488,9 @@ static void window_load(Window *window) {
   layer_add_child(root, text_layer_get_layer(s_vol_layer));
   #endif
 
+  // --- THE FIX: apply_fonts() is safely moved below all layer creations ---
+  apply_fonts();
+  
   s_window_loaded = true;
 }
 
