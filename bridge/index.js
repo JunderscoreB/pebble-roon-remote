@@ -12,7 +12,7 @@ var current_zone_id = null;
 var roon = new RoonApi({
     extension_id:        'com.junderscoreb.pebble.remote',
     display_name:        "Pebble Watch Remote",
-    display_version:     "0.90.0",
+    display_version:     "0.99.4",
     publisher:           "J_B",
     email:               "dev@example.com",
     log_level:           "none",
@@ -81,13 +81,30 @@ app.get('/status', (req, res) => {
         line2 = z.now_playing.three_line.line2 || "";
     }
 
+    // --- THE FIX: ROON API VOLUME PARSING ---
+    var vol_val = 0;
+    var is_fixed = false;
+
+    // First check if the volume object exists at all
+    if (output && output.volume) {
+        vol_val = output.volume.value || 0;
+        
+        // Roon API uses "type": "fixed" to flag unadjustable zones
+        if (output.volume.type === 'fixed') {
+            is_fixed = true;
+        }
+    } else {
+        // If the volume object is entirely missing, the endpoint is uncontrollable/fixed
+        is_fixed = true;
+    }
+
     res.json({
         zone: z.display_name,
         track: line1,
         artist: line2,
         is_playing: z.state === "playing",
-        volume: output ? output.volume.value : 0,
-        is_fixed_volume: output ? output.volume.is_fixed_volume : false
+        volume: vol_val,
+        is_fixed_volume: is_fixed
     });
 });
 

@@ -290,8 +290,8 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   #if ENABLE_VOLUME
   else if (s_mode == MODE_VOLUME) { 
     reset_vol_timer(); 
-    // THE FIX: Only send standard volume_up API command if zone is not Fixed
-    if (!s_is_fixed) send_command("volume_up"); 
+    // THE FIX: Restored the command back to "vol_up" so the Node.js bridge understands it!
+    if (!s_is_fixed) send_command("vol_up"); 
   }
   #endif
 }
@@ -303,8 +303,8 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   #if ENABLE_VOLUME
   else if (s_mode == MODE_VOLUME) { 
     reset_vol_timer(); 
-    // THE FIX: Only send standard volume_down API command if zone is not Fixed
-    if (!s_is_fixed) send_command("volume_down"); 
+    // THE FIX: Restored the command back to "vol_down" so the Node.js bridge understands it!
+    if (!s_is_fixed) send_command("vol_down"); 
   }
   #endif
 }
@@ -366,7 +366,6 @@ static void click_config_provider(void *context) {
   window_long_click_subscribe(BUTTON_ID_SELECT, 800, select_long_click_handler, NULL);
 }
 
-// --- THE FIX: Restrict Play/Pause action purely to Track Mode ---
 #ifdef PBL_TOUCH
 static void touch_handler(const TouchEvent *event, void *context) {
   if (s_mode == MODE_ERROR) return;
@@ -381,11 +380,11 @@ static void touch_handler(const TouchEvent *event, void *context) {
         if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
         s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
       } else if (s_mode == MODE_ZONE) {
-        reset_zone_timer(); // Extends the menu view safely
+        reset_zone_timer(); 
       }
       #if ENABLE_VOLUME
       else if (s_mode == MODE_VOLUME) {
-        reset_vol_timer(); // Extends the menu view safely
+        reset_vol_timer(); 
       }
       #endif
     }
@@ -506,7 +505,6 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   }
   #endif
 
-  // Receives the safely parsed integer from the JS fix above!
   if ((t = dict_find(iterator, KEY_IS_FIXED))) s_is_fixed = (get_tuple_int(t) == 1);
 }
 
