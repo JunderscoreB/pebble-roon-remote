@@ -11,7 +11,7 @@ var current_zone_id = null;
 // --- ROON SETUP ---
 var roon = new RoonApi({
     extension_id:        'com.junderscoreb.pebble.remote',
-    display_name:        "Pebble Watch Remote",
+    display_name:        "Pebble Roon Remote",
     display_version:     "0.99.4",
     publisher:           "J_B",
     email:               "dev@example.com",
@@ -81,7 +81,7 @@ app.get('/status', (req, res) => {
         line2 = z.now_playing.three_line.line2 || "";
     }
 
-    // --- THE FIX: ROON API VOLUME PARSING ---
+    // --- ROON API VOLUME PARSING ---
     var vol_val = 0;
     var is_fixed = false;
 
@@ -124,18 +124,19 @@ app.get('/previous', (req, res) => {
     res.send("OK");
 });
 
+// THE FIX: Switch to "relative_step" to support hardware steps instead of arbitrary percentages
 app.get('/vol_up', (req, res) => {
     var z = getZone();
-    if (core && z && z.outputs[0]) {
-        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative", 2);
+    if (core && z && z.outputs && z.outputs.length > 0) {
+        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", 1);
     }
     res.send("OK");
 });
 
 app.get('/vol_down', (req, res) => {
     var z = getZone();
-    if (core && z && z.outputs[0]) {
-        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative", -2);
+    if (core && z && z.outputs && z.outputs.length > 0) {
+        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", -1);
     }
     res.send("OK");
 });
