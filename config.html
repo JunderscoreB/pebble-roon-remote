@@ -23,8 +23,8 @@
 
   <label for="font-size">Font Size</label>
   <select id="font-size">
-    <option value="large">Large</option>
     <option value="normal">Normal</option>
+    <option value="large">Large</option>
   </select>
   
   <button class="btn-save" onclick="save()">Save to Watch</button>
@@ -37,7 +37,9 @@
     
     document.getElementById('ip').value = getQueryParam('ip') || '';
     document.getElementById('port').value = getQueryParam('port') || '3000';
-    document.getElementById('font-size').value = getQueryParam('font_size') || 'large';
+    
+    // Now falls back to normal
+    document.getElementById('font-size').value = getQueryParam('font_size') || 'normal';
 
     function save() {
       var config = { 
