@@ -88,6 +88,18 @@ static int get_tuple_int(Tuple *t) {
   }
 }
 
+// --- NETWORK THROTTLE ---
+static void cooldown_cb(void *data) {
+  s_network_ready = true;
+  s_network_cooldown_timer = NULL;
+}
+
+static void trigger_cooldown() {
+  s_network_ready = false;
+  if (s_network_cooldown_timer) app_timer_cancel(s_network_cooldown_timer);
+  s_network_cooldown_timer = app_timer_register(250, cooldown_cb, NULL);
+}
+
 static void send_command(char *cmd) {
   if (!s_window_loaded) return;
   if (!s_network_ready) return;
@@ -97,16 +109,11 @@ static void send_command(char *cmd) {
   if (result == APP_MSG_OK) {
     dict_write_cstring(iter, KEY_COMMAND, cmd);
     app_message_outbox_send();
-    
-    // Lock network briefly to prevent spamming
-    s_network_ready = false;
-    if (s_network_cooldown_timer) app_timer_cancel(s_network_cooldown_timer);
-    s_network_cooldown_timer = app_timer_register(250, (AppTimerCallback) (void (*)(void*)) &s_network_ready, (void*)1);
+    trigger_cooldown(); // THE FIX: Safely trigger the cooldown using a real function!
   }
 }
 
 // --- INSTANT UI UPDATE ENGINE ---
-// Forces a rapid status pull so the screen doesn't lag 2-3 seconds after changing a zone or volume
 static void status_request_cb(void *data) {
   s_status_timer = NULL;
   send_command("status");
@@ -293,7 +300,7 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   else if (s_mode == MODE_ZONE) { 
     reset_zone_timer(); 
     send_command("prev_zone"); 
-    schedule_status_update(); // Eliminate visual lag
+    schedule_status_update(); 
   }
   #if ENABLE_VOLUME
   else if (s_mode == MODE_VOLUME) { 
@@ -312,7 +319,7 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   else if (s_mode == MODE_ZONE) { 
     reset_zone_timer(); 
     send_command("next_zone"); 
-    schedule_status_update(); // Eliminate visual lag
+    schedule_status_update(); 
   }
   #if ENABLE_VOLUME
   else if (s_mode == MODE_VOLUME) { 
@@ -381,6 +388,52 @@ static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
   window_long_click_subscribe(BUTTON_ID_SELECT, 800, select_long_click_handler, NULL);
 }
+
+#ifdef PBL_TOUCH
+static void touch_handler(const TouchEvent *event, void *context) {
+  if (s_mode == MODE_ERROR) return;
+  if (event->type == TouchEvent_Touchdown) {
+    Layer *window_layer = window_get_root_layer(s_window);
+    GRect bounds = layer_get_bounds(window_layer);
+    GRect status_target = GRect(0, bounds.size.h / 2, bounds.size.w, bounds.size.h / 2);
+    GPoint tap_loc = GPoint(event->x, event->y);
+    if (grect_contains_point(&status_target, &tap_loc)) {
+      if (s_mode == MODE_TRACK) {
+        vibes_short_pulse(); 
+        if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
+        s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
+      } else if (s_mode == MODE_ZONE) {
+        reset_zone_timer(); 
+      }
+      #if ENABLE_VOLUME
+      else if (s_mode == MODE_VOLUME) {
+        reset_vol_timer(); 
+      }
+      #endif
+    }
+  }
+}
+#endif
+
+#ifndef PBL_TOUCH
+static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
+  if (s_mode == MODE_ERROR) return;
+  if (axis == ACCEL_AXIS_Z) {
+    if (s_mode == MODE_TRACK) {
+      vibes_short_pulse(); 
+      if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
+      s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
+    } else if (s_mode == MODE_ZONE) {
+      reset_zone_timer();
+    }
+    #if ENABLE_VOLUME
+    else if (s_mode == MODE_VOLUME) {
+      reset_vol_timer();
+    }
+    #endif
+  }
+}
+#endif
 
 static void status_layer_update_proc(Layer *layer, GContext *ctx) {
   if (!s_window_loaded || s_mode == MODE_ERROR) return;
@@ -558,6 +611,13 @@ static void window_unload(Window *window) {
   layer_destroy(s_status_layer);
   bitmap_layer_destroy(s_logo_layer);
   gbitmap_destroy(s_logo_bitmap);
+
+  s_track_layer = NULL;
+  s_artist_layer = NULL;
+  s_zone_layer = NULL;
+  s_status_layer = NULL;
+  s_logo_layer = NULL;
+  s_logo_bitmap = NULL;
 }
 
 static void init(void) {
@@ -566,6 +626,13 @@ static void init(void) {
 
   s_window = window_create();
   window_set_click_config_provider(s_window, click_config_provider);
+  
+  #ifdef PBL_TOUCH
+  if (touch_service_is_enabled()) touch_service_subscribe(touch_handler, NULL);
+  #else
+  accel_tap_service_subscribe(accel_tap_handler);
+  #endif
+  
   window_set_window_handlers(s_window, (WindowHandlers) { .load = window_load, .unload = window_unload });
   app_message_register_inbox_received(inbox_received_callback);
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
@@ -574,6 +641,11 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  #ifdef PBL_TOUCH
+  touch_service_unsubscribe();
+  #else
+  accel_tap_service_unsubscribe();
+  #endif
   window_destroy(s_window);
 }
 
