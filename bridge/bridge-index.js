@@ -21,12 +21,10 @@ var roon = new RoonApi({
         core = core_;
         console.log("-> Paired with Roon Core:", core.display_name);
         
-        // Subscribe to state updates
         var transport = core.services.RoonApiTransport;
         transport.subscribe_zones((response, msg) => {
             if (response == "Subscribed") {
                 zones = msg.zones.reduce((map, z) => { map[z.zone_id] = z; return map; }, {});
-                // Auto-select first zone if none selected
                 if (!current_zone_id && msg.zones.length > 0) current_zone_id = msg.zones[0].zone_id;
             } else if (response == "Changed") {
                 if (msg.zones_added)   msg.zones_added.forEach(z => zones[z.zone_id] = z);
@@ -51,86 +49,76 @@ roon.init_services({
 svc_status.set_status("Extension enabled", false);
 roon.start_discovery();
 
-// --- WEB SERVER (Port 3000) ---
-
-// HELPER: Get Current Zone Object
+// --- HELPER: BUILD STATUS JSON ---
+// By centralizing this, we can instantly return fresh data after ANY command!
 function getZone() {
     if (!core) return null;
     if (!current_zone_id || !zones[current_zone_id]) {
-        // Fallback: Grab first available zone
         var keys = Object.keys(zones);
         if (keys.length > 0) current_zone_id = keys[0];
     }
     return zones[current_zone_id];
 }
 
-// ENDPOINT: Status (What the watch constantly polls)
-app.get('/status', (req, res) => {
+function buildStatus() {
     var z = getZone();
-    if (!z) {
-        return res.json({ zone: "Searching...", track: "No Core", artist: "", is_playing: false });
-    }
+    if (!z) return { zone: "Searching...", track: "No Core", artist: "", is_playing: false };
 
-    var output = z.outputs[0]; // Primary output
+    var output = z.outputs && z.outputs.length > 0 ? z.outputs[0] : null;
     
-    // Safety check for metadata
     var line1 = "Unknown"; 
     var line2 = "";
-    if (z.now_playing) {
+    if (z.now_playing && z.now_playing.three_line) {
         line1 = z.now_playing.three_line.line1 || "No Track";
         line2 = z.now_playing.three_line.line2 || "";
     }
 
-    // --- ROON API VOLUME PARSING ---
     var vol_val = 0;
     var is_fixed = false;
 
-    // First check if the volume object exists at all
     if (output && output.volume) {
         vol_val = output.volume.value || 0;
-        
-        // Roon API uses "type": "fixed" to flag unadjustable zones
-        if (output.volume.type === 'fixed') {
-            is_fixed = true;
-        }
+        if (output.volume.type === 'fixed') is_fixed = true;
     } else {
-        // If the volume object is entirely missing, the endpoint is uncontrollable/fixed
         is_fixed = true;
     }
 
-    res.json({
-        zone: z.display_name,
+    return {
+        zone: z.display_name || "Unknown",
         track: line1,
         artist: line2,
         is_playing: z.state === "playing",
         volume: vol_val,
         is_fixed_volume: is_fixed
-    });
+    };
+}
+
+// --- WEB SERVER (Port 3000) ---
+app.get('/status', (req, res) => {
+    res.json(buildStatus());
 });
 
-// ENDPOINT: Commands
 app.get('/playpause', (req, res) => {
     if (core && getZone()) core.services.RoonApiTransport.control(getZone(), "playpause");
-    res.send("OK");
+    res.json(buildStatus());
 });
 
 app.get('/next', (req, res) => {
     if (core && getZone()) core.services.RoonApiTransport.control(getZone(), "next");
-    res.send("OK");
+    res.json(buildStatus());
 });
 
 app.get('/previous', (req, res) => {
     if (core && getZone()) core.services.RoonApiTransport.control(getZone(), "previous");
-    res.send("OK");
+    res.json(buildStatus());
 });
 
-// THE FIX: Switch to "relative_step" to support hardware steps instead of arbitrary percentages
 app.get('/vol_up', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
         core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", 1);
     }
-    res.send("OK");
+    res.json(buildStatus());
 });
 
 app.get('/vol_down', (req, res) => {
@@ -138,30 +126,27 @@ app.get('/vol_down', (req, res) => {
     if (core && z && z.outputs && z.outputs.length > 0) {
         core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", -1);
     }
-    res.send("OK");
+    res.json(buildStatus());
 });
 
-// ENDPOINT: Cycle Zones
 app.get('/next_zone', (req, res) => {
     var keys = Object.keys(zones);
-    if (keys.length === 0) return res.send("No Zones");
-    
-    var idx = keys.indexOf(current_zone_id);
-    var nextIdx = (idx + 1) % keys.length;
-    current_zone_id = keys[nextIdx];
-    
-    res.send("Switched to " + zones[current_zone_id].display_name);
+    if (keys.length > 0) {
+        var idx = keys.indexOf(current_zone_id);
+        var nextIdx = (idx + 1) % keys.length;
+        current_zone_id = keys[nextIdx];
+    }
+    res.json(buildStatus()); // instantly returns new zone info!
 });
 
 app.get('/prev_zone', (req, res) => {
     var keys = Object.keys(zones);
-    if (keys.length === 0) return res.send("No Zones");
-    
-    var idx = keys.indexOf(current_zone_id);
-    var prevIdx = (idx - 1 + keys.length) % keys.length;
-    current_zone_id = keys[prevIdx];
-    
-    res.send("Switched to " + zones[current_zone_id].display_name);
+    if (keys.length > 0) {
+        var idx = keys.indexOf(current_zone_id);
+        var prevIdx = (idx - 1 + keys.length) % keys.length;
+        current_zone_id = keys[prevIdx];
+    }
+    res.json(buildStatus()); // instantly returns new zone info!
 });
 
 // Start Server

@@ -35,7 +35,7 @@ static Window *s_window;
 static bool s_window_loaded = false;
 
 // Configs
-static int s_font_size = 1; // 0=Small, 1=Normal, 2=Large
+static int s_font_size = 1; 
 static bool s_enable_scroll = false; 
 
 // UI Layers
@@ -65,13 +65,12 @@ static int s_volume = -1;
 static AppTimer *s_network_cooldown_timer = NULL;
 static AppTimer *s_playpause_delay_timer = NULL;
 static AppTimer *s_zone_revert_timer = NULL;
-static AppTimer *s_status_timer = NULL;
 
 static bool s_is_playing = false;
 static bool s_is_fixed = false;
 static bool s_network_ready = true;
 
-// --- DEDICATED MEMORY BUFFERS ---
+// Buffers
 static char s_track_buf[128] = "";
 static char s_artist_buf[128] = "";
 static char s_zone_buf[64] = "";
@@ -88,7 +87,7 @@ static int get_tuple_int(Tuple *t) {
   }
 }
 
-// --- NETWORK THROTTLE ---
+// --- NETWORK ---
 static void cooldown_cb(void *data) {
   s_network_ready = true;
   s_network_cooldown_timer = NULL;
@@ -109,19 +108,8 @@ static void send_command(char *cmd) {
   if (result == APP_MSG_OK) {
     dict_write_cstring(iter, KEY_COMMAND, cmd);
     app_message_outbox_send();
-    trigger_cooldown(); // THE FIX: Safely trigger the cooldown using a real function!
+    trigger_cooldown();
   }
-}
-
-// --- INSTANT UI UPDATE ENGINE ---
-static void status_request_cb(void *data) {
-  s_status_timer = NULL;
-  send_command("status");
-}
-
-static void schedule_status_update() {
-  if (s_status_timer) app_timer_cancel(s_status_timer);
-  s_status_timer = app_timer_register(350, status_request_cb, NULL);
 }
 
 static void safe_set_text(TextLayer *layer, char *text) {
@@ -146,7 +134,6 @@ static void apply_fonts() {
   }
 }
 
-// --- MARQUEE ENGINE ---
 static void stop_marquee() {
   if (s_marquee_anim) {
     animation_unschedule(property_animation_get_animation(s_marquee_anim));
@@ -275,7 +262,6 @@ static void cancel_vol_timer() {
 #endif
 
 // --- BUTTON CONTROLS ---
-
 static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_ZONE) {
     cancel_zone_timer();
@@ -296,38 +282,34 @@ static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
 
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_ERROR) return;
-  if (s_mode == MODE_TRACK) send_command("previous");
-  else if (s_mode == MODE_ZONE) { 
+  
+  if (s_mode == MODE_TRACK) {
+    send_command("previous");
+  } else if (s_mode == MODE_ZONE) { 
     reset_zone_timer(); 
     send_command("prev_zone"); 
-    schedule_status_update(); 
   }
   #if ENABLE_VOLUME
   else if (s_mode == MODE_VOLUME) { 
     reset_vol_timer(); 
-    if (!s_is_fixed) {
-      send_command("vol_up"); 
-      schedule_status_update();
-    }
+    if (!s_is_fixed) send_command("vol_up"); 
   }
   #endif
 }
 
 static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_ERROR) return;
-  if (s_mode == MODE_TRACK) send_command("next");
-  else if (s_mode == MODE_ZONE) { 
+  
+  if (s_mode == MODE_TRACK) {
+    send_command("next");
+  } else if (s_mode == MODE_ZONE) { 
     reset_zone_timer(); 
     send_command("next_zone"); 
-    schedule_status_update(); 
   }
   #if ENABLE_VOLUME
   else if (s_mode == MODE_VOLUME) { 
     reset_vol_timer(); 
-    if (!s_is_fixed) {
-      send_command("vol_down"); 
-      schedule_status_update();
-    }
+    if (!s_is_fixed) send_command("vol_down"); 
   }
   #endif
 }
@@ -594,7 +576,6 @@ static void window_unload(Window *window) {
   if (s_play_path) { gpath_destroy(s_play_path); s_play_path = NULL; }
   if (s_network_cooldown_timer) app_timer_cancel(s_network_cooldown_timer);
   if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
-  if (s_status_timer) app_timer_cancel(s_status_timer);
   
   stop_marquee();
   cancel_zone_timer();
@@ -611,13 +592,6 @@ static void window_unload(Window *window) {
   layer_destroy(s_status_layer);
   bitmap_layer_destroy(s_logo_layer);
   gbitmap_destroy(s_logo_bitmap);
-
-  s_track_layer = NULL;
-  s_artist_layer = NULL;
-  s_zone_layer = NULL;
-  s_status_layer = NULL;
-  s_logo_layer = NULL;
-  s_logo_bitmap = NULL;
 }
 
 static void init(void) {
