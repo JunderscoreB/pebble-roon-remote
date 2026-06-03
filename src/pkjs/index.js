@@ -1,3 +1,4 @@
+// --- COMPILE-TIME BUNDLING ---
 var devConfig = require('../../dev_config.json'); 
 var DEFAULT_IP = devConfig.ip || "192.168.1.50"; 
 var DEFAULT_PORT = "3000";
@@ -82,17 +83,30 @@ function sendToWatch(responseText) {
     var response = JSON.parse(responseText);
     if (response.is_playing !== undefined) g_isPlaying = response.is_playing;
 
+    // --- THE FIX: Deep Nested Volume Parsing ---
     var safeVolume = -1;
-    if (response.volume !== undefined && response.volume !== null) safeVolume = parseInt(response.volume, 10);
-    else if (response.volume_value !== undefined && response.volume_value !== null) safeVolume = parseInt(response.volume_value, 10);
-    else if (response.level !== undefined && response.level !== null) safeVolume = parseInt(response.level, 10);
+    var isFixed = false;
+
+    // Roon often nests volume data as an object: "volume": { "type": "fixed", "value": 50 }
+    if (response.volume !== undefined && response.volume !== null) {
+      if (typeof response.volume === 'object') {
+        safeVolume = parseInt(response.volume.value, 10);
+        if (response.volume.type === 'fixed') isFixed = true;
+      } else {
+        safeVolume = parseInt(response.volume, 10);
+      }
+    } else if (response.volume_value !== undefined && response.volume_value !== null) {
+      safeVolume = parseInt(response.volume_value, 10);
+    } else if (response.level !== undefined && response.level !== null) {
+      safeVolume = parseInt(response.level, 10);
+    }
+
+    if (response.is_fixed_volume === true) isFixed = true;
     if (isNaN(safeVolume)) safeVolume = -1;
 
-    // --- BULLETPROOF MIGRATION FOR FONT SIZES ---
+    // Font Data Migration
     var rawFont = localStorage.getItem('font_size');
-    var savedFont = 1; // Default to Normal
-    
-    // Safely catch both the old words and the new integers
+    var savedFont = 1; 
     if (rawFont === 'large' || rawFont === '2') savedFont = 2;
     else if (rawFont === 'small' || rawFont === '0') savedFont = 0;
     else if (rawFont === 'normal' || rawFont === '1') savedFont = 1;
@@ -105,7 +119,7 @@ function sendToWatch(responseText) {
       'artist': response.artist || "",
       'is_playing': response.is_playing ? 1 : 0,
       'volume_val': safeVolume,
-      'is_fixed': response.is_fixed_volume ? 1 : 0,
+      'is_fixed': isFixed ? 1 : 0,
       'error': 0,
       'font_size': savedFont,
       'scroll_text': isScrollEnabled
@@ -135,15 +149,12 @@ Pebble.addEventListener('showConfiguration', function(e) {
   var ip = localStorage.getItem('bridge_ip') || DEFAULT_IP;
   var port = localStorage.getItem('bridge_port') || DEFAULT_PORT;
   
-  // Safely migrate the default for the HTML selector
   var rawFont = localStorage.getItem('font_size');
   var fontSize = '1';
   if (rawFont === 'large' || rawFont === '2') fontSize = '2';
   else if (rawFont === 'small' || rawFont === '0') fontSize = '0';
   
   var scrollText = localStorage.getItem('scroll_text') || '0';
-  
-  // CACHE BUSTER: Appends a random number so the phone always fetches fresh HTML
   var cacheBuster = Math.round(Math.random() * 10000);
   
   var finalUrl = CONFIG_URL + "?v=" + cacheBuster + "&ip=" + encodeURIComponent(ip) + "&port=" + encodeURIComponent(port) + "&font_size=" + encodeURIComponent(fontSize) + "&scroll_text=" + encodeURIComponent(scrollText);

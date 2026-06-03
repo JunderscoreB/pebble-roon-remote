@@ -118,15 +118,15 @@ static void safe_set_text(TextLayer *layer, char *text) {
 static void apply_fonts() {
   if (!s_track_layer || !s_artist_layer || !s_zone_layer) return;
   
-  if (s_font_size == 2) { // LARGE
+  if (s_font_size == 2) { 
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
     text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28)); 
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-  } else if (s_font_size == 1) { // NORMAL
+  } else if (s_font_size == 1) { 
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
     text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24)); 
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
-  } else { // SMALL
+  } else { 
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
     text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18)); 
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
@@ -201,7 +201,6 @@ static void update_ui() {
     return;
   }
 
-  // FORCE the Status Layer to redraw its graphics instantly when a mode changes
   if (s_status_layer) {
     layer_set_hidden(s_status_layer, false);
     layer_mark_dirty(s_status_layer);
@@ -289,7 +288,11 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_TRACK) send_command("previous");
   else if (s_mode == MODE_ZONE) { reset_zone_timer(); send_command("prev_zone"); }
   #if ENABLE_VOLUME
-  else if (s_mode == MODE_VOLUME) { reset_vol_timer(); send_command("vol_up"); }
+  else if (s_mode == MODE_VOLUME) { 
+    reset_vol_timer(); 
+    // THE FIX: Only send standard volume_up API command if zone is not Fixed
+    if (!s_is_fixed) send_command("volume_up"); 
+  }
   #endif
 }
 
@@ -298,7 +301,11 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_TRACK) send_command("next");
   else if (s_mode == MODE_ZONE) { reset_zone_timer(); send_command("next_zone"); }
   #if ENABLE_VOLUME
-  else if (s_mode == MODE_VOLUME) { reset_vol_timer(); send_command("vol_down"); }
+  else if (s_mode == MODE_VOLUME) { 
+    reset_vol_timer(); 
+    // THE FIX: Only send standard volume_down API command if zone is not Fixed
+    if (!s_is_fixed) send_command("volume_down"); 
+  }
   #endif
 }
 
@@ -359,6 +366,7 @@ static void click_config_provider(void *context) {
   window_long_click_subscribe(BUTTON_ID_SELECT, 800, select_long_click_handler, NULL);
 }
 
+// --- THE FIX: Restrict Play/Pause action purely to Track Mode ---
 #ifdef PBL_TOUCH
 static void touch_handler(const TouchEvent *event, void *context) {
   if (s_mode == MODE_ERROR) return;
@@ -368,12 +376,17 @@ static void touch_handler(const TouchEvent *event, void *context) {
     GRect status_target = GRect(0, bounds.size.h / 2, bounds.size.w, bounds.size.h / 2);
     GPoint tap_loc = GPoint(event->x, event->y);
     if (grect_contains_point(&status_target, &tap_loc)) {
-      vibes_short_pulse(); 
-      if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
-      s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
-      if (s_mode == MODE_ZONE) reset_zone_timer();
+      if (s_mode == MODE_TRACK) {
+        vibes_short_pulse(); 
+        if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
+        s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
+      } else if (s_mode == MODE_ZONE) {
+        reset_zone_timer(); // Extends the menu view safely
+      }
       #if ENABLE_VOLUME
-      if (s_mode == MODE_VOLUME) reset_vol_timer();
+      else if (s_mode == MODE_VOLUME) {
+        reset_vol_timer(); // Extends the menu view safely
+      }
       #endif
     }
   }
@@ -384,24 +397,27 @@ static void touch_handler(const TouchEvent *event, void *context) {
 static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   if (s_mode == MODE_ERROR) return;
   if (axis == ACCEL_AXIS_Z) {
-    vibes_short_pulse(); 
-    if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
-    s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
-    if (s_mode == MODE_ZONE) reset_zone_timer();
+    if (s_mode == MODE_TRACK) {
+      vibes_short_pulse(); 
+      if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
+      s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
+    } else if (s_mode == MODE_ZONE) {
+      reset_zone_timer();
+    }
     #if ENABLE_VOLUME
-    if (s_mode == MODE_VOLUME) reset_vol_timer();
+    else if (s_mode == MODE_VOLUME) {
+      reset_vol_timer();
+    }
     #endif
   }
 }
 #endif
 
-// --- DYNAMIC GRAPHICS / STATUS LABEL RENDERING ---
 static void status_layer_update_proc(Layer *layer, GContext *ctx) {
   if (!s_window_loaded || s_mode == MODE_ERROR) return;
   GRect bounds = layer_get_bounds(layer);
   
   if (s_mode == MODE_TRACK) {
-    // Standard Behavior: Draw Play or Pause icon
     graphics_context_set_fill_color(ctx, GColorWhite);
     if (s_is_playing) {
       graphics_fill_rect(ctx, GRect(bounds.size.w/2 - 6, bounds.size.h/2 - 8, 4, 16), 0, GCornerNone);
@@ -413,7 +429,6 @@ static void status_layer_update_proc(Layer *layer, GContext *ctx) {
       }
     }
   } else {
-    // Modes Behavior: Swap the shape out for text!
     graphics_context_set_text_color(ctx, GColorWhite);
     const char* mode_text = "";
     
@@ -422,7 +437,6 @@ static void status_layer_update_proc(Layer *layer, GContext *ctx) {
     else if (s_mode == MODE_VOLUME) mode_text = "Volume Mode";
     #endif
     
-    // Nudge the text upwards slightly (Y = -2) so it centers beautifully inside the 16px tall box
     graphics_draw_text(ctx, mode_text, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 
                        GRect(0, -2, bounds.size.w, 20), 
                        GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
@@ -492,6 +506,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   }
   #endif
 
+  // Receives the safely parsed integer from the JS fix above!
   if ((t = dict_find(iterator, KEY_IS_FIXED))) s_is_fixed = (get_tuple_int(t) == 1);
 }
 
