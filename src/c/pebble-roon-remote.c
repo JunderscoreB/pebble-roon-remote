@@ -169,7 +169,6 @@ static void start_marquee() {
     text_layer_set_text_alignment(s_track_layer, GTextAlignmentLeft);
     Layer *t_layer = text_layer_get_layer(s_track_layer);
 
-    // Slide entirely across the screen
     GRect start = GRect(bounds.size.w, NATIVE_Y(36, 44), text_size.w + 20, NATIVE_H(56, 56));
     GRect end = GRect(-text_size.w - 20, NATIVE_Y(36, 44), text_size.w + 20, NATIVE_H(56, 56));
 
@@ -202,7 +201,11 @@ static void update_ui() {
     return;
   }
 
-  if (s_status_layer) layer_set_hidden(s_status_layer, false);
+  // FORCE the Status Layer to redraw its graphics instantly when a mode changes
+  if (s_status_layer) {
+    layer_set_hidden(s_status_layer, false);
+    layer_mark_dirty(s_status_layer);
+  }
 
   if (s_zone_layer) {
     safe_set_text(s_zone_layer, s_zone_buf);
@@ -263,7 +266,6 @@ static void cancel_vol_timer() {
 
 // --- BUTTON CONTROLS ---
 
-// NEW: Overrides the default Back button behavior
 static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_ZONE) {
     cancel_zone_timer();
@@ -278,7 +280,6 @@ static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
   }
   #endif
   else {
-    // If we are already in the main track mode, pop the window to close the app properly
     window_stack_pop(true);
   }
 }
@@ -308,11 +309,29 @@ static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
     send_command("retry_connection");
     return;
   }
-  if (s_mode == MODE_TRACK) { s_mode = MODE_ZONE; reset_zone_timer(); }
-  else if (s_mode == MODE_ZONE) { cancel_zone_timer(); send_command("status"); s_mode = MODE_TRACK; }
+  
+  if (s_mode == MODE_TRACK) { 
+    s_mode = MODE_ZONE; 
+    reset_zone_timer(); 
+  }
+  else if (s_mode == MODE_ZONE) { 
+    cancel_zone_timer(); 
+    #if ENABLE_VOLUME
+    s_mode = MODE_VOLUME;
+    reset_vol_timer();
+    #else
+    send_command("status"); 
+    s_mode = MODE_TRACK; 
+    #endif
+  }
   #if ENABLE_VOLUME
-  else if (s_mode == MODE_VOLUME) { cancel_vol_timer(); s_mode = MODE_ZONE; }
+  else if (s_mode == MODE_VOLUME) { 
+    cancel_vol_timer(); 
+    send_command("status"); 
+    s_mode = MODE_TRACK; 
+  }
   #endif
+  
   update_ui();
 }
 
@@ -333,9 +352,7 @@ static void select_long_click_handler(ClickRecognizerRef recognizer, void *conte
 }
 
 static void click_config_provider(void *context) {
-  // NEW: Subscribe the Back Button to our custom handler
   window_single_click_subscribe(BUTTON_ID_BACK, back_click_handler);
-  
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
   window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
@@ -378,18 +395,37 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
 }
 #endif
 
+// --- DYNAMIC GRAPHICS / STATUS LABEL RENDERING ---
 static void status_layer_update_proc(Layer *layer, GContext *ctx) {
   if (!s_window_loaded || s_mode == MODE_ERROR) return;
   GRect bounds = layer_get_bounds(layer);
-  graphics_context_set_fill_color(ctx, GColorWhite);
-  if (s_is_playing) {
-    graphics_fill_rect(ctx, GRect(bounds.size.w/2 - 6, bounds.size.h/2 - 8, 4, 16), 0, GCornerNone);
-    graphics_fill_rect(ctx, GRect(bounds.size.w/2 + 2, bounds.size.h/2 - 8, 4, 16), 0, GCornerNone);
-  } else {
-    if (s_play_path) {
-      gpath_move_to(s_play_path, GPoint(bounds.size.w/2, bounds.size.h/2));
-      gpath_draw_filled(ctx, s_play_path);
+  
+  if (s_mode == MODE_TRACK) {
+    // Standard Behavior: Draw Play or Pause icon
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    if (s_is_playing) {
+      graphics_fill_rect(ctx, GRect(bounds.size.w/2 - 6, bounds.size.h/2 - 8, 4, 16), 0, GCornerNone);
+      graphics_fill_rect(ctx, GRect(bounds.size.w/2 + 2, bounds.size.h/2 - 8, 4, 16), 0, GCornerNone);
+    } else {
+      if (s_play_path) {
+        gpath_move_to(s_play_path, GPoint(bounds.size.w/2, bounds.size.h/2));
+        gpath_draw_filled(ctx, s_play_path);
+      }
     }
+  } else {
+    // Modes Behavior: Swap the shape out for text!
+    graphics_context_set_text_color(ctx, GColorWhite);
+    const char* mode_text = "";
+    
+    if (s_mode == MODE_ZONE) mode_text = "Zone Mode";
+    #if ENABLE_VOLUME
+    else if (s_mode == MODE_VOLUME) mode_text = "Volume Mode";
+    #endif
+    
+    // Nudge the text upwards slightly (Y = -2) so it centers beautifully inside the 16px tall box
+    graphics_draw_text(ctx, mode_text, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 
+                       GRect(0, -2, bounds.size.w, 20), 
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
   }
 }
 
