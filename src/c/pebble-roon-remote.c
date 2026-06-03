@@ -116,21 +116,21 @@ static void safe_set_text(TextLayer *layer, char *text) {
 }
 
 static void apply_fonts() {
-  // THE FIX: We explicitly removed the !s_window_loaded safety check here
+  // We explicitly removed the !s_window_loaded safety check here
   // so the fonts can successfully load during the watch boot sequence!
   if (!s_track_layer || !s_artist_layer || !s_zone_layer) return;
   
-  if (s_font_size == 2) {
+  if (s_font_size == 2) { // LARGE
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
-    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28)); // Bumped from 24
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-  } else if (s_font_size == 1) {
+  } else if (s_font_size == 1) { // NORMAL
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24)); // Bumped from 18
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
-  } else {
+  } else { // SMALL
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
-    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+    text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18)); // Bumped from 14
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
   }
 }
