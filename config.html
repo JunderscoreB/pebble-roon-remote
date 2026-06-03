@@ -7,6 +7,7 @@
   <style>
     body { font-family: sans-serif; padding: 20px; background: #222; color: #eee; }
     label { display: block; margin-bottom: 10px; font-weight: bold; }
+    .warning { font-size: 12px; color: #ff9800; font-weight: normal; margin-left: 5px; }
     input, select { width: 100%; padding: 10px; margin-bottom: 20px; border-radius: 5px; border: none; box-sizing: border-box; font-size: 16px; }
     button { width: 100%; padding: 15px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-bottom: 10px; font-weight: bold; }
     .btn-save { background: #ff5722; color: white; }
@@ -23,8 +24,15 @@
 
   <label for="font-size">Font Size</label>
   <select id="font-size">
-    <option value="normal">Normal</option>
-    <option value="large">Large</option>
+    <option value="1">Normal</option>
+    <option value="0">Small</option>
+    <option value="2">Large</option>
+  </select>
+
+  <label for="scroll-text">Auto-Scroll Long Text <span class="warning">(Heavy Battery Drain)</span></label>
+  <select id="scroll-text">
+    <option value="0">Off (Battery Saver)</option>
+    <option value="1">On (Marquee Scroll)</option>
   </select>
   
   <button class="btn-save" onclick="save()">Save to Watch</button>
@@ -37,15 +45,15 @@
     
     document.getElementById('ip').value = getQueryParam('ip') || '';
     document.getElementById('port').value = getQueryParam('port') || '3000';
-    
-    // Now falls back to normal
-    document.getElementById('font-size').value = getQueryParam('font_size') || 'normal';
+    document.getElementById('font-size').value = getQueryParam('font_size') || '1';
+    document.getElementById('scroll-text').value = getQueryParam('scroll_text') || '0';
 
     function save() {
       var config = { 
         "ip": document.getElementById('ip').value, 
         "port": document.getElementById('port').value,
-        "font_size": document.getElementById('font-size').value
+        "font_size": document.getElementById('font-size').value,
+        "scroll_text": document.getElementById('scroll-text').value
       };
       var return_to = getQueryParam('return_to') || 'pebblejs://close#';
       location.href = return_to + encodeURIComponent(JSON.stringify(config));
