@@ -116,7 +116,9 @@ static void safe_set_text(TextLayer *layer, char *text) {
 }
 
 static void apply_fonts() {
-  if (!s_window_loaded || !s_track_layer || !s_artist_layer || !s_zone_layer) return;
+  // THE FIX: We explicitly removed the !s_window_loaded safety check here
+  // so the fonts can successfully load during the watch boot sequence!
+  if (!s_track_layer || !s_artist_layer || !s_zone_layer) return;
   
   if (s_font_size == 2) {
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
@@ -143,7 +145,8 @@ static void stop_marquee() {
   if (s_track_layer && s_window_loaded) {
     Layer *root = window_get_root_layer(s_window);
     GRect bounds = layer_get_bounds(root);
-    layer_set_frame(text_layer_get_layer(s_track_layer), GRect(0, NATIVE_Y(40, 48), bounds.size.w, NATIVE_H(60, 60)));
+    // Y-axis adjusted for new tight layout
+    layer_set_frame(text_layer_get_layer(s_track_layer), GRect(0, NATIVE_Y(36, 44), bounds.size.w, NATIVE_H(56, 56)));
     text_layer_set_text_alignment(s_track_layer, GTextAlignmentCenter);
   }
 }
@@ -155,7 +158,6 @@ static void start_marquee() {
   const char* text = text_layer_get_text(s_track_layer);
   if (!text || strlen(text) == 0) return;
 
-  // Use the active font state to correctly calculate text pixel width
   GFont font;
   if (s_font_size == 2) font = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
   else if (s_font_size == 1) font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
@@ -170,14 +172,13 @@ static void start_marquee() {
     text_layer_set_text_alignment(s_track_layer, GTextAlignmentLeft);
     Layer *t_layer = text_layer_get_layer(s_track_layer);
 
-    // Slide entirely across the screen
-    GRect start = GRect(bounds.size.w, NATIVE_Y(40, 48), text_size.w + 20, NATIVE_H(60, 60));
-    GRect end = GRect(-text_size.w - 20, NATIVE_Y(40, 48), text_size.w + 20, NATIVE_H(60, 60));
+    // Slide entirely across the screen (Y-axis updated)
+    GRect start = GRect(bounds.size.w, NATIVE_Y(36, 44), text_size.w + 20, NATIVE_H(56, 56));
+    GRect end = GRect(-text_size.w - 20, NATIVE_Y(36, 44), text_size.w + 20, NATIVE_H(56, 56));
 
     s_marquee_anim = property_animation_create_layer_frame(t_layer, &start, &end);
     Animation *anim = property_animation_get_animation(s_marquee_anim);
 
-    // Maintain consistent velocity (pixels per second) based on text length
     int duration = (bounds.size.w + text_size.w + 40) * 20; 
     animation_set_duration(anim, duration);
     animation_set_curve(anim, AnimationCurveLinear);
@@ -380,7 +381,6 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   }
   if (s_mode == MODE_ERROR) return;
 
-  // --- CONFIGURATION UPDATES ---
   if ((t = dict_find(iterator, KEY_FONT_SIZE))) {
     int requested_size = get_tuple_int(t);
     if (s_font_size != requested_size) {
@@ -400,8 +400,6 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     }
   }
 
-  // --- PAYLOAD DATA ---
-  // The strcmp protects the marquee from resetting on empty polling updates
   if ((t = dict_find(iterator, KEY_ZONE_NAME))) {
     if (strcmp(s_zone_buf, t->value->cstring) != 0) {
       snprintf(s_zone_buf, sizeof(s_zone_buf), "%s", t->value->cstring);
@@ -454,8 +452,8 @@ static void window_load(Window *window) {
   bitmap_layer_set_alignment(s_logo_layer, GAlignCenter);
   layer_add_child(root, bitmap_layer_get_layer(s_logo_layer));
 
-  // Y-axis positioning adjusted safely to prevent large-font clipping
-  s_track_layer = text_layer_create(GRect(0, NATIVE_Y(40, 48), bounds.size.w, NATIVE_H(60, 60)));
+  // The Y positioning is packed efficiently to leave space for multi-line Artist text
+  s_track_layer = text_layer_create(GRect(0, NATIVE_Y(36, 44), bounds.size.w, NATIVE_H(56, 56)));
   text_layer_set_text(s_track_layer, "Loading...");
   text_layer_set_text_alignment(s_track_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(s_track_layer, GTextOverflowModeTrailingEllipsis);
@@ -463,20 +461,23 @@ static void window_load(Window *window) {
   text_layer_set_text_color(s_track_layer, GColorWhite);
   layer_add_child(root, text_layer_get_layer(s_track_layer));
 
-  s_artist_layer = text_layer_create(GRect(0, NATIVE_Y(98, 106), bounds.size.w, NATIVE_H(30, 30)));
+  // Height expanded to 42px to allow up to two lines of Artist text to safely wrap
+  s_artist_layer = text_layer_create(GRect(0, NATIVE_Y(92, 100), bounds.size.w, NATIVE_H(42, 42)));
   text_layer_set_text_alignment(s_artist_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(s_artist_layer, GTextOverflowModeTrailingEllipsis);
   text_layer_set_background_color(s_artist_layer, GColorClear);
   text_layer_set_text_color(s_artist_layer, GColorWhite);
   layer_add_child(root, text_layer_get_layer(s_artist_layer));
 
+  // Lock in the correct fonts BEFORE the UI is drawn on screen
   apply_fonts();
 
-  s_status_layer = layer_create(GRect(0, NATIVE_Y(128, 132), bounds.size.w, NATIVE_H(20, 20)));
+  // Status icon shifted slightly down to accommodate the taller artist box
+  s_status_layer = layer_create(GRect(0, NATIVE_Y(134, 138), bounds.size.w, NATIVE_H(16, 16)));
   layer_set_update_proc(s_status_layer, status_layer_update_proc);
   layer_add_child(root, s_status_layer);
 
-  s_zone_layer = text_layer_create(GRect(0, NATIVE_Y(142, 146), bounds.size.w, NATIVE_H(26, 34)));
+  s_zone_layer = text_layer_create(GRect(0, NATIVE_Y(150, 150), bounds.size.w, NATIVE_H(18, 24)));
   text_layer_set_text(s_zone_layer, "Connecting...");
   text_layer_set_text_alignment(s_zone_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(s_zone_layer, GTextOverflowModeTrailingEllipsis);
