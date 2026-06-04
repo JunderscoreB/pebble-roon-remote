@@ -86,6 +86,31 @@
 
     <div class="card">
       <div class="item">
+        <label>App Inactivity Timeout</label>
+        <select id="timeout_app">
+          <option value="0">Infinite (Never close)</option>
+          <option value="5">5 Minutes</option>
+          <option value="15">15 Minutes</option>
+          <option value="30">30 Minutes</option>
+          <option value="60">1 Hour</option>
+        </select>
+        <div class="help-text">Closes the app automatically if no buttons are pressed.</div>
+      </div>
+      <div class="item">
+        <label>Disconnect Timeout</label>
+        <select id="timeout_disc">
+          <option value="0">Infinite (Never close)</option>
+          <option value="1">1 Minute</option>
+          <option value="5">5 Minutes</option>
+          <option value="15">15 Minutes</option>
+          <option value="30">30 Minutes</option>
+        </select>
+        <div class="help-text">Closes the app if the Bridge connection or Bluetooth drops.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="item">
         <label>Font Size</label>
         <select id="font_size">
           <option value="0">Small</option>
@@ -102,7 +127,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="updown_card" style="display: none;">
       <div class="item">
         <label>Up/Down Buttons Control:</label>
         <select id="updown_vol">
@@ -118,7 +143,6 @@
   </div>
 
   <script>
-    // Helper to read data sent from the Pebble app
     function getQueryParam(variable, defaultValue) {
       var query = location.search.substring(1);
       var vars = query.split('&');
@@ -131,24 +155,29 @@
       return defaultValue;
     }
 
-    // Pre-fill the form with the user's current settings
     document.getElementById('ip').value = getQueryParam('ip', '192.168.1.50');
     document.getElementById('port').value = getQueryParam('port', '3000');
     document.getElementById('font_size').value = getQueryParam('font_size', '1');
     document.getElementById('scroll_text').value = getQueryParam('scroll_text', '0');
     document.getElementById('updown_vol').value = getQueryParam('updown_vol', '0');
+    document.getElementById('timeout_app').value = getQueryParam('timeout_app', '0');
+    document.getElementById('timeout_disc').value = getQueryParam('timeout_disc', '0');
 
-    // Handle Save Button
+    if (getQueryParam('support_updown') === '1') {
+      document.getElementById('updown_card').style.display = 'block';
+    }
+
     document.getElementById('save_btn').addEventListener('click', function() {
       var config = {
         ip: document.getElementById('ip').value,
         port: document.getElementById('port').value,
         font_size: document.getElementById('font_size').value,
         scroll_text: document.getElementById('scroll_text').value,
-        updown_vol: document.getElementById('updown_vol').value
+        updown_vol: document.getElementById('updown_vol').value,
+        timeout_app: document.getElementById('timeout_app').value,
+        timeout_disc: document.getElementById('timeout_disc').value
       };
 
-      // Pebble relies on this return URL to capture the data
       var return_to = getQueryParam('return_to', 'pebblejs://close#');
       window.location.href = return_to + encodeURIComponent(JSON.stringify(config));
     });
