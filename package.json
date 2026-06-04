@@ -1,7 +1,7 @@
 {
   "name": "pebble-roon-remote",
   "author": "J_B",
-  "version": "0.99.4",
+  "version": "1.0.0",
   "keywords": [
     "pebble-app"
   ],
@@ -35,7 +35,10 @@
       "is_fixed": 6,
       "error": 7,
       "font_size": 8,
-      "scroll_text": 9
+      "scroll_text": 9,
+      "updown_vol": 10,
+      "timeout_app": 11,
+      "timeout_disc": 12
     },
     "resources": {
       "media": [

@@ -5,14 +5,15 @@
 Control your Roon music zones directly from your wrist. This app works with the Pebble web services and connects to your local Roon Core via a lightweight bridge extension.
 
 ### ⌚ Features
-* **Track Control:** Play, Pause, Next, Previous.
+* **Customizable Track/Volume Controls:** Map your Up/Down buttons to instantly control volume (with a seamless quick-flash UI overlay) or change tracks.
 * **Touch Support:** Capacitive touch support for Pebble Time 2 (Emery platform) and Pebble Round 2—simply tap the screen to Play/Pause!
-* **Zone Selection:** View and switch active Roon zones directly from the watch.
+* **Zone Selection:** View and cycle through active Roon zones directly from the watch with rapid, debounced updates.
 * **Live Metadata:** See Artist, Track, and Zone Name in real-time.
-* **Smart Timeout:** The interface automatically reverts to the Track view after 4 seconds of inactivity.
-* **Low Latency:** Optimized for instant feedback using the PebbleDict API.
+* **UI Customization:** Choose your preferred font size and toggle marquee scrolling for long track names.
+* **Smart Timeouts:** Preserve battery with customizable idle and disconnect timeouts that automatically exit the app when inactive.
+* **Low Latency:** Optimized for instant feedback using the PebbleDict API and optimistic UI rendering.
 
-### 🚀 [Download Latest Version (v0.99.2 Release Candidate)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
+### 🚀 [Download Latest Version (v1.0.0)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
 ### 💬 [Join the Roon Community Discussion](https://community.roonlabs.com/t/pebble-smartwatch-app-and-corresponding-roon-extension/313874)
 
 ---
@@ -40,9 +41,9 @@ You can install the app directly from the Rebble App Store or manually sideload 
 2. Open the file on your phone. If you have the Pebble App installed, it will prompt you to load the app package onto your watch.
 
 #### 3. Configure
-1. Open the **Pebble App** on your smartphone (e.g., your Pixel 10 Pro Fold or iOS device) and go to the **Apps** tab.
+1. Open the **Pebble App** on your smartphone and go to the **Apps** tab.
 2. Find **Roon Remote** in the list and tap the **Settings** (gear) icon.
-3. Enter the **IP address** of the computer running the Bridge (e.g., `192.168.1.50`).
+3. Enter your Bridge IP address, choose your desired UI settings (Font Size, Scroll, Button Mapping), and set your preferred Timeouts.
 4. Tap **Save**.
 
 ---
@@ -52,9 +53,11 @@ You can install the app directly from the Rebble App Store or manually sideload 
 * **Tap Screen (Touch devices):** Play / Pause.
 * **Select (Short Press):** Toggle between **Track Mode** and **Zone Mode**.
 * **Select (Long Press):** Play / Pause.
-* **Up / Down (Track Mode):** Previous / Next Track.
+* **Up / Down (Track Mode):** Adjust Volume (Default) OR Previous/Next Track (Customizable in Settings).
 * **Up / Down (Zone Mode):** Cycle through available Roon Zones.
-* **Up / Down (Volume Mode):** Adjust Volume (if enabled).
+* **Up / Down (Volume Mode):** Only applicable if Up/Down is mapped to Tracks in settings. Allows dedicated volume adjustment.
+
+> **Pro Tip for App Timeouts:** For the best experience, assign Roon Remote to a **Quick Launch** button on your watch (Watch Settings -> Quick Launch). When the inactivity timeout triggers, the app will gracefully exit directly to your watchface instead of the Pebble app menu!
 
 ---
 

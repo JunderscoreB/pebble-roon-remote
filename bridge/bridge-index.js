@@ -1,18 +1,27 @@
+/*
+ * Pebble Roon Remote
+ * Copyright (c) 2026 J_B
+ *
+ * Released under the MIT License.
+ *
+ * AI Disclosure: Portions of this file were generated and optimized with the assistance of generative AI.
+ * (Google Gemini).
+ */
+
 var RoonApi          = require("node-roon-api"),
-    RoonApiStatus    = require("node-roon-api-status"),
-    RoonApiTransport = require("node-roon-api-transport"),
-    express          = require("express"),
-    app              = express();
+RoonApiStatus    = require("node-roon-api-status"),
+RoonApiTransport = require("node-roon-api-transport"),
+express          = require("express"),
+app              = express();
 
 var core;
 var zones = {};
 var current_zone_id = null;
 
-// --- ROON SETUP ---
 var roon = new RoonApi({
     extension_id:        'com.junderscoreb.pebble.remote',
     display_name:        "Pebble Roon Remote",
-    display_version:     "0.99.4",
+    display_version:     "1.0.0",
     publisher:           "J_B",
     email:               "dev@example.com",
     log_level:           "none",
@@ -20,7 +29,7 @@ var roon = new RoonApi({
     core_paired: function(core_) {
         core = core_;
         console.log("-> Paired with Roon Core:", core.display_name);
-        
+
         var transport = core.services.RoonApiTransport;
         transport.subscribe_zones((response, msg) => {
             if (response == "Subscribed") {
@@ -49,7 +58,6 @@ roon.init_services({
 svc_status.set_status("Extension enabled", false);
 roon.start_discovery();
 
-// --- HELPER: BUILD STATUS JSON ---
 function getZone() {
     if (!core) return null;
     if (!current_zone_id || !zones[current_zone_id]) {
@@ -64,8 +72,8 @@ function buildStatus() {
     if (!z) return { zone: "Searching...", track: "No Core", artist: "", is_playing: false };
 
     var output = z.outputs && z.outputs.length > 0 ? z.outputs[0] : null;
-    
-    var line1 = "Unknown"; 
+
+    var line1 = "Unknown";
     var line2 = "";
     if (z.now_playing && z.now_playing.three_line) {
         line1 = z.now_playing.three_line.line1 || "No Track";
@@ -92,10 +100,7 @@ function buildStatus() {
     };
 }
 
-// --- WEB SERVER (Port 3000) ---
-app.get('/status', (req, res) => {
-    res.json(buildStatus());
-});
+app.get('/status', (req, res) => { res.json(buildStatus()); });
 
 app.get('/playpause', (req, res) => {
     if (core && getZone()) core.services.RoonApiTransport.control(getZone(), "playpause");
@@ -112,31 +117,20 @@ app.get('/previous', (req, res) => {
     res.json(buildStatus());
 });
 
-// THE FIX: Absolute mathematically calculated volume for perfect 1-point increments
 app.get('/vol_up', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        var out = z.outputs[0];
-        if (out.volume && out.volume.type !== 'fixed') {
-            var currentVol = out.volume.value || 0;
-            var maxVol = out.volume.max || 100;
-            core.services.RoonApiTransport.change_volume(out, "absolute", Math.min(currentVol + 1, maxVol));
-        }
+        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", 1);
     }
-    res.json(buildStatus());
+    setTimeout(() => { res.json(buildStatus()); }, 250);
 });
 
 app.get('/vol_down', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        var out = z.outputs[0];
-        if (out.volume && out.volume.type !== 'fixed') {
-            var currentVol = out.volume.value || 0;
-            var minVol = out.volume.min || 0;
-            core.services.RoonApiTransport.change_volume(out, "absolute", Math.max(currentVol - 1, minVol));
-        }
+        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", -1);
     }
-    res.json(buildStatus());
+    setTimeout(() => { res.json(buildStatus()); }, 250);
 });
 
 app.get('/next_zone', (req, res) => {
@@ -146,7 +140,7 @@ app.get('/next_zone', (req, res) => {
         var nextIdx = (idx + 1) % keys.length;
         current_zone_id = keys[nextIdx];
     }
-    res.json(buildStatus());
+    setTimeout(() => { res.json(buildStatus()); }, 300);
 });
 
 app.get('/prev_zone', (req, res) => {
@@ -156,10 +150,9 @@ app.get('/prev_zone', (req, res) => {
         var prevIdx = (idx - 1 + keys.length) % keys.length;
         current_zone_id = keys[prevIdx];
     }
-    res.json(buildStatus()); 
+    setTimeout(() => { res.json(buildStatus()); }, 300);
 });
 
-// Start Server
 app.listen(3000, () => {
     console.log('Pebble Bridge running on Port 3000');
 });

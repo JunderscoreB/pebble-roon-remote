@@ -1,6 +1,15 @@
-// --- COMPILE-TIME BUNDLING ---
-var devConfig = require('../../dev_config.json'); 
-var DEFAULT_IP = devConfig.ip || "192.168.1.50"; 
+/*
+ * Pebble Roon Remote
+ * Copyright (c) 2026 J_B
+ *
+ * Released under the MIT License.
+ *
+ * AI Disclosure: Portions of this file were generated and optimized with the assistance of generative AI.
+ * (Google Gemini).
+ */
+
+var devConfig = require('../../dev_config.json');
+var DEFAULT_IP = devConfig.ip || "192.168.1.50";
 var DEFAULT_PORT = "3000";
 var CONFIG_URL = "https://junderscoreb.github.io/pebble-roon-remote/config.html";
 
@@ -8,6 +17,11 @@ var g_isPlaying = false;
 var g_messageQueue = [];
 var g_isSendingMessage = false;
 var g_pollTimer = null;
+
+var g_cachedZones = [];
+var g_currentZoneId = null;
+var g_zoneSwitchTimer = null;
+var g_isSwitchingZone = false;
 
 function getBridgeUrl() {
   var ip = localStorage.getItem('bridge_ip') || DEFAULT_IP;
@@ -25,18 +39,17 @@ function pumpQueue() {
   if (g_isSendingMessage || g_messageQueue.length === 0) return;
   g_isSendingMessage = true;
   var dict = g_messageQueue[0];
-  
-  Pebble.sendAppMessage(dict, 
-    function(e) {
-      g_messageQueue.shift();
-      g_isSendingMessage = false;
-      pumpQueue();
-    }, 
-    function(e) {
-      console.log("AppMessage failed, retrying...", JSON.stringify(e));
-      g_isSendingMessage = false;
-      setTimeout(pumpQueue, 500);
-    }
+
+  Pebble.sendAppMessage(dict,
+                        function(e) {
+                          g_messageQueue.shift();
+                          g_isSendingMessage = false;
+                          pumpQueue();
+                        },
+                        function(e) {
+                          g_isSendingMessage = false;
+                          setTimeout(pumpQueue, 100);
+                        }
   );
 }
 
@@ -46,55 +59,44 @@ function sendBridgeCommand(command) {
   req.onload = function() {
     if (req.status === 200) sendToWatch(req.responseText);
   };
-  req.send(null);
+    req.send(null);
 }
 
-function scheduleNextFetch() { 
+function scheduleNextFetch() {
   if (g_pollTimer) clearTimeout(g_pollTimer);
-  g_pollTimer = setTimeout(fetchStatus, 3000); 
+  g_pollTimer = setTimeout(fetchStatus, 3000);
 }
 
 function fetchStatus() {
   var req = new XMLHttpRequest();
   req.open('GET', getBridgeUrl() + 'status', true);
-  
   req.onload = function() {
-    if (req.status === 200) {
-      sendToWatch(req.responseText);
-      scheduleNextFetch();
-    } else {
-      sendErrorToWatch();
-      scheduleNextFetch();
-    }
+    if (req.status === 200) { sendToWatch(req.responseText); scheduleNextFetch(); }
+    else { sendErrorToWatch(); scheduleNextFetch(); }
   };
-
   req.onerror = function() { sendErrorToWatch(); scheduleNextFetch(); };
   req.ontimeout = function() { sendErrorToWatch(); scheduleNextFetch(); };
-  req.timeout = 4000; 
+  req.timeout = 4000;
   req.send(null);
 }
 
-function sendErrorToWatch() {
-  sendAppMessageQueue({ 'error': 1 });
-}
+function sendErrorToWatch() { sendAppMessageQueue({ 'error': 1 }); }
 
 function sendToWatch(responseText) {
   try {
     var response = JSON.parse(responseText);
+
+    if (response.zones) g_cachedZones = response.zones;
+    if (response.zone_id && !g_isSwitchingZone) g_currentZoneId = response.zone_id;
     if (response.is_playing !== undefined) g_isPlaying = response.is_playing;
 
-    // --- THE FIX: Deep Nested Volume Parsing ---
     var safeVolume = -1;
     var isFixed = false;
-
-    // Roon often nests volume data as an object: "volume": { "type": "fixed", "value": 50 }
     if (response.volume !== undefined && response.volume !== null) {
       if (typeof response.volume === 'object') {
         safeVolume = parseInt(response.volume.value, 10);
         if (response.volume.type === 'fixed') isFixed = true;
-      } else {
-        safeVolume = parseInt(response.volume, 10);
-      }
+      } else { safeVolume = parseInt(response.volume, 10); }
     } else if (response.volume_value !== undefined && response.volume_value !== null) {
       safeVolume = parseInt(response.volume_value, 10);
     } else if (response.level !== undefined && response.level !== null) {
@@ -104,39 +106,66 @@ function sendToWatch(responseText) {
     if (response.is_fixed_volume === true) isFixed = true;
     if (isNaN(safeVolume)) safeVolume = -1;
 
-    // Font Data Migration
     var rawFont = localStorage.getItem('font_size');
-    var savedFont = 1; 
-    if (rawFont === 'large' || rawFont === '2') savedFont = 2;
-    else if (rawFont === 'small' || rawFont === '0') savedFont = 0;
-    else if (rawFont === 'normal' || rawFont === '1') savedFont = 1;
-
+    var savedFont = (rawFont === 'large' || rawFont === '2') ? 2 : (rawFont === 'small' || rawFont === '0') ? 0 : 1;
     var isScrollEnabled = (localStorage.getItem('scroll_text') === '1') ? 1 : 0;
 
+    var updownRaw = localStorage.getItem('updown_vol');
+    if (updownRaw === null) updownRaw = '1';
+    var isUpDownVol = (updownRaw === '1') ? 1 : 0;
+
+    var timeApp = parseInt(localStorage.getItem('timeout_app') || '0', 10);
+    var timeDisc = parseInt(localStorage.getItem('timeout_disc') || '0', 10);
+
     sendAppMessageQueue({
-      'zone_name': response.zone || "Unknown",
-      'track': response.track || "",
-      'artist': response.artist || "",
-      'is_playing': response.is_playing ? 1 : 0,
-      'volume_val': safeVolume,
-      'is_fixed': isFixed ? 1 : 0,
-      'error': 0,
-      'font_size': savedFont,
-      'scroll_text': isScrollEnabled
+      'zone_name': (!g_isSwitchingZone) ? (response.zone || "Unknown") : undefined,
+                        'track': response.track || "",
+                        'artist': response.artist || "",
+                        'is_playing': response.is_playing ? 1 : 0,
+                        'volume_val': safeVolume,
+                        'is_fixed': isFixed ? 1 : 0,
+                        'error': 0,
+                        'font_size': savedFont,
+                        'scroll_text': isScrollEnabled,
+                        'updown_vol': isUpDownVol,
+                        'timeout_app': timeApp,
+                        'timeout_disc': timeDisc
     });
-  } catch (err) {
-    console.log("JSON Parse Error: " + err);
-  }
+  } catch (err) { console.log("JSON Parse Error: " + err); }
 }
 
 Pebble.addEventListener('ready', function() { fetchStatus(); });
 
 Pebble.addEventListener('appmessage', function(e) {
   var command = e.payload['command'] || e.payload['0'] || e.payload[0];
-  if (command === "retry_connection") {
-     fetchStatus();
-     return;
+  if (command === "retry_connection") { fetchStatus(); return; }
+
+  if (command === "next_zone" || command === "prev_zone") {
+    if (g_cachedZones.length > 0) {
+      g_isSwitchingZone = true;
+      var idx = g_cachedZones.findIndex(function(z) { return z.id === g_currentZoneId; });
+      if (idx === -1) idx = 0;
+
+      if (command === "next_zone") idx = (idx + 1) % g_cachedZones.length;
+      else idx = (idx - 1 + g_cachedZones.length) % g_cachedZones.length;
+
+      g_currentZoneId = g_cachedZones[idx].id;
+
+      sendAppMessageQueue({
+        'zone_name': g_cachedZones[idx].name,
+        'track': "Switching...",
+        'artist': " "
+      });
+
+      if (g_zoneSwitchTimer) clearTimeout(g_zoneSwitchTimer);
+      g_zoneSwitchTimer = setTimeout(function() {
+        sendBridgeCommand("set_zone?id=" + encodeURIComponent(g_currentZoneId));
+        setTimeout(function() { g_isSwitchingZone = false; }, 1000);
+      }, 500);
+      return;
+    }
   }
+
   if ((command === "next" || command === "previous") && !g_isPlaying) {
     sendBridgeCommand(command);
     setTimeout(function() { sendBridgeCommand("pause"); }, 2500);
@@ -148,16 +177,25 @@ Pebble.addEventListener('appmessage', function(e) {
 Pebble.addEventListener('showConfiguration', function(e) {
   var ip = localStorage.getItem('bridge_ip') || DEFAULT_IP;
   var port = localStorage.getItem('bridge_port') || DEFAULT_PORT;
-  
-  var rawFont = localStorage.getItem('font_size');
-  var fontSize = '1';
-  if (rawFont === 'large' || rawFont === '2') fontSize = '2';
-  else if (rawFont === 'small' || rawFont === '0') fontSize = '0';
-  
+  var rawFont = localStorage.getItem('font_size') || "1";
   var scrollText = localStorage.getItem('scroll_text') || '0';
+  var updownVol = localStorage.getItem('updown_vol');
+  if (updownVol === null) updownVol = '1';
+  var timeApp = localStorage.getItem('timeout_app') || '0';
+  var timeDisc = localStorage.getItem('timeout_disc') || '0';
+
   var cacheBuster = Math.round(Math.random() * 10000);
-  
-  var finalUrl = CONFIG_URL + "?v=" + cacheBuster + "&ip=" + encodeURIComponent(ip) + "&port=" + encodeURIComponent(port) + "&font_size=" + encodeURIComponent(fontSize) + "&scroll_text=" + encodeURIComponent(scrollText);
+
+  var finalUrl = CONFIG_URL + "?v=" + cacheBuster +
+  "&ip=" + encodeURIComponent(ip) +
+  "&port=" + encodeURIComponent(port) +
+  "&font_size=" + encodeURIComponent(rawFont) +
+  "&scroll_text=" + encodeURIComponent(scrollText) +
+  "&updown_vol=" + encodeURIComponent(updownVol) +
+  "&timeout_app=" + encodeURIComponent(timeApp) +
+  "&timeout_disc=" + encodeURIComponent(timeDisc) +
+  "&support_updown=1";
+
   Pebble.openURL(finalUrl);
 });
 
@@ -170,10 +208,11 @@ Pebble.addEventListener('webviewclosed', function(e) {
         localStorage.setItem('bridge_port', config.port || "3000");
         localStorage.setItem('font_size', config.font_size || "1");
         localStorage.setItem('scroll_text', config.scroll_text || "0");
+        localStorage.setItem('updown_vol', config.updown_vol || "1");
+        localStorage.setItem('timeout_app', config.timeout_app || "0");
+        localStorage.setItem('timeout_disc', config.timeout_disc || "0");
         fetchStatus();
       }
-    } catch(err) {
-      console.log("Settings parse error: ", err);
-    }
+    } catch(err) {}
   }
 });
