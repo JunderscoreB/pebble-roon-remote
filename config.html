@@ -43,6 +43,7 @@
         <label>App Inactivity Timeout</label>
         <select id="timeout_app">
           <option value="0">Infinite (Never close)</option>
+          <option value="1">1 Minute (Testing)</option>
           <option value="5">5 Minutes</option>
           <option value="15">15 Minutes</option>
           <option value="30">30 Minutes</option>
@@ -113,7 +114,7 @@
     document.getElementById('port').value = getQueryParam('port', '3000');
     document.getElementById('font_size').value = getQueryParam('font_size', '1');
     document.getElementById('scroll_text').value = getQueryParam('scroll_text', '0');
-    document.getElementById('updown_vol').value = getQueryParam('updown_vol', '1'); // Default is now 1
+    document.getElementById('updown_vol').value = getQueryParam('updown_vol', '1');
     document.getElementById('timeout_app').value = getQueryParam('timeout_app', '0');
     document.getElementById('timeout_disc').value = getQueryParam('timeout_disc', '0');
 
