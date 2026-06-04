@@ -5,15 +5,15 @@
 Control your Roon music zones directly from your wrist. This app works with the Pebble web services and connects to your local Roon Core via a lightweight bridge extension.
 
 ### ⌚ Features
-* **Customizable Track/Volume Controls:** Map your Up/Down buttons to instantly control volume (with a seamless quick-flash UI overlay) or change tracks.
-* **Touch Support:** Capacitive touch support for Pebble Time 2 (Emery platform) and Pebble Round 2—simply tap the screen to Play/Pause!
-* **Zone Selection:** View and cycle through active Roon zones directly from the watch with rapid, debounced updates.
+* **Customizable Track/Volume Controls:** Map your Up/Down buttons to instantly control volume (with a seamless quick-flash UI overlay) or change tracks. Supports fixed-volume endpoint detection!
+* **Touch Support:** Capacitive touch support for Pebble Time 2 (Emery platform) and Pebble Round 2—simply tap the screen to Play/Pause. Includes a safety toggle to disable touch, and automatically blocks touches while system notifications are visible.
+* **Zone Selection:** View and cycle through active Roon zones directly from the watch with rapid, debounced network updates.
 * **Live Metadata:** See Artist, Track, and Zone Name in real-time.
-* **UI Customization:** Choose your preferred font size and toggle marquee scrolling for long track names.
+* **UI Customization:** Choose your preferred font size (Play/Pause icons dynamically scale to match!) and toggle marquee scrolling for long track names.
 * **Smart Timeouts:** Preserve battery with customizable idle and disconnect timeouts that automatically exit the app when inactive.
-* **Low Latency:** Optimized for instant feedback using the PebbleDict API and optimistic UI rendering.
+* **Low Latency:** Optimized for instant feedback using the PebbleDict API and optimistic UI rendering for Play/Pause and Volume controls.
 
-### 🚀 [Download Latest Version (v1.0.0)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
+### 🚀 [Download Latest Version (v1.0.1)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
 ### 💬 [Join the Roon Community Discussion](https://community.roonlabs.com/t/pebble-smartwatch-app-and-corresponding-roon-extension/313874)
 
 ---
@@ -22,11 +22,12 @@ Control your Roon music zones directly from your wrist. This app works with the 
 
 #### 1. Install the Bridge
 This app requires a lightweight server to talk to Roon.
+
 1. Download the `bridge` folder from this repository to your computer or NAS (works perfectly on setups like a QNAP NAS).
 2. **Using Docker (Recommended):** Open a terminal in the `bridge` folder and start the server with a single command:
-   ```bash
-   docker compose up -d --build
-   ```
+    ```bash
+    docker compose up -d --build
+    ```
 3. **Running Natively (Alternative):** If you prefer not to use Docker, ensure you have Node.js and Git installed on your machine. Open a terminal in the `bridge` folder, run `npm install`, and then start it with `npm start`.
 4. Enable the extension in your Roon Settings (**Settings** -> **Extensions**).
 
@@ -50,12 +51,12 @@ You can install the app directly from the Rebble App Store or manually sideload 
 
 ### 🕹️ Controls
 
-* **Tap Screen (Touch devices):** Play / Pause.
+* **Tap Screen (Touch devices) / Flick Wrist:** Play / Pause.
 * **Select (Short Press):** Toggle between **Track Mode** and **Zone Mode**.
 * **Select (Long Press):** Play / Pause.
-* **Up / Down (Track Mode):** Adjust Volume (Default) OR Previous/Next Track (Customizable in Settings).
+* **Up / Down (Short Press):** Adjust Volume (displays a dedicated visual overlay) OR Previous/Next Track (Customizable in Settings).
+* **Up / Down (Long Press):** Previous / Next Track.
 * **Up / Down (Zone Mode):** Cycle through available Roon Zones.
-* **Up / Down (Volume Mode):** Only applicable if Up/Down is mapped to Tracks in settings. Allows dedicated volume adjustment.
 
 > **Pro Tip for App Timeouts:** For the best experience, assign Roon Remote to a **Quick Launch** button on your watch (Watch Settings -> Quick Launch). When the inactivity timeout triggers, the app will gracefully exit directly to your watchface instead of the Pebble app menu!
 

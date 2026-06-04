@@ -20,15 +20,15 @@
 #define KEY_ERROR 7
 #define KEY_FONT_SIZE 8
 #define KEY_SCROLL_TEXT 9
-#define KEY_UPDOWN_VOL 10
-#define KEY_TIMEOUT_APP 11
-#define KEY_TIMEOUT_DISC 12
+#define KEY_TIMEOUT_APP 10
+#define KEY_TIMEOUT_DISC 11
+#define KEY_ENABLE_TOUCH 12
 
 #define PERSIST_KEY_FONT 0
 #define PERSIST_KEY_SCROLL 1
-#define PERSIST_KEY_UPDOWN_VOL 2
-#define PERSIST_KEY_TIMEOUT_APP 3
-#define PERSIST_KEY_TIMEOUT_DISC 4
+#define PERSIST_KEY_TIMEOUT_APP 2
+#define PERSIST_KEY_TIMEOUT_DISC 3
+#define PERSIST_KEY_TOUCH 4
 
 #define ENABLE_VOLUME 1
 
@@ -41,9 +41,6 @@ typedef enum {
   MODE_TRACK,
   MODE_ZONE,
   MODE_ERROR
-  #if ENABLE_VOLUME
-  ,MODE_VOLUME
-  #endif
 } AppMode;
 
 static AppMode s_mode = MODE_TRACK;
@@ -53,9 +50,9 @@ static bool s_window_loaded = false;
 // Configs
 static int s_font_size = 1;
 static bool s_enable_scroll = false;
-static bool s_updown_volume = true;
 static int s_timeout_app_min = 0;
 static int s_timeout_disc_min = 0;
+static bool s_enable_touch = true;
 
 // UI Layers
 static BitmapLayer *s_logo_layer = NULL;
@@ -67,10 +64,15 @@ static Layer *s_status_layer = NULL;
 
 // Render Objects
 static GPath *s_play_path = NULL;
-static const GPathInfo s_play_path_info = {
-  .num_points = 3,
-  .points = (GPoint []) {{-4, -8}, {-4, 8}, {8, 0}}
-};
+static const GPoint s_large_play_points[] = {{-6, -12}, {-6, 12}, {12, 0}};
+static const GPathInfo s_large_play_info = { .num_points = 3, .points = (GPoint *)s_large_play_points };
+
+static const GPoint s_normal_play_points[] = {{-4, -8}, {-4, 8}, {8, 0}};
+static const GPathInfo s_normal_play_info = { .num_points = 3, .points = (GPoint *)s_normal_play_points };
+
+static const GPoint s_small_play_points[] = {{-3, -6}, {-3, 6}, {6, 0}};
+static const GPathInfo s_small_play_info = { .num_points = 3, .points = (GPoint *)s_small_play_points };
+
 static PropertyAnimation *s_marquee_anim = NULL;
 
 #if ENABLE_VOLUME
@@ -99,6 +101,7 @@ static bool s_btns_locked = false;
 static bool s_is_playing = false;
 static bool s_is_fixed = false;
 static bool s_network_ready = true;
+static bool s_app_in_focus = true;
 
 // Buffers
 static char s_track_buf[128] = "";
@@ -117,6 +120,7 @@ static int get_tuple_int(Tuple *t) {
   }
 }
 
+// --- IDLE TIMEOUT ENGINE ---
 static void exit_app_cb(void *data) {
   window_stack_pop_all(true);
 }
@@ -144,6 +148,11 @@ static void bluetooth_callback(bool connected) {
       update_ui();
     }
   }
+}
+
+// --- SYSTEM FOCUS HANDLER ---
+static void focus_handler(bool in_focus) {
+  s_app_in_focus = in_focus;
 }
 
 static void cooldown_cb(void *data) {
@@ -194,8 +203,6 @@ static void flash_volume_ms(int ms) {
   update_ui();
 }
 
-static void flash_volume() { flash_volume_ms(2000); }
-
 static void cancel_vol_flash() {
   s_is_flashing_vol = false;
   if (s_vol_flash_timer) {
@@ -212,18 +219,26 @@ static void safe_set_text(TextLayer *layer, char *text) {
 static void apply_fonts() {
   if (!s_track_layer || !s_artist_layer || !s_zone_layer) return;
 
+  if (s_play_path) {
+    gpath_destroy(s_play_path);
+    s_play_path = NULL;
+  }
+
   if (s_font_size == 2) {
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
     text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28));
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+    s_play_path = gpath_create(&s_large_play_info);
   } else if (s_font_size == 1) {
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
     text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
+    s_play_path = gpath_create(&s_normal_play_info);
   } else {
     text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
     text_layer_set_font(s_artist_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
     text_layer_set_font(s_zone_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
+    s_play_path = gpath_create(&s_small_play_info);
   }
 }
 
@@ -313,7 +328,7 @@ static void update_ui() {
 
   #if ENABLE_VOLUME
   if (s_vol_layer) {
-    if (s_mode == MODE_VOLUME || s_is_flashing_vol) {
+    if (s_is_flashing_vol) {
       if (s_is_fixed) snprintf(s_vol_buf, sizeof(s_vol_buf), "Fixed Vol");
       else if (s_volume == -1) snprintf(s_vol_buf, sizeof(s_vol_buf), "Vol: --");
       else snprintf(s_vol_buf, sizeof(s_vol_buf), "Vol: %d", s_volume);
@@ -342,20 +357,6 @@ static void cancel_zone_timer() {
 }
 
 #if ENABLE_VOLUME
-static void vol_revert_callback(void *data) {
-  s_vol_revert_timer = NULL;
-  if (s_mode == MODE_VOLUME) { s_mode = MODE_TRACK; update_ui(); }
-}
-
-static void reset_vol_timer() {
-  if (s_vol_revert_timer) app_timer_cancel(s_vol_revert_timer);
-  s_vol_revert_timer = app_timer_register(8000, vol_revert_callback, NULL);
-}
-
-static void cancel_vol_timer() {
-  if (s_vol_revert_timer) { app_timer_cancel(s_vol_revert_timer); s_vol_revert_timer = NULL; }
-}
-
 static void vol_ignore_cb(void *data) {
   s_ignore_vol_updates = false;
   s_vol_ignore_timer = NULL;
@@ -368,8 +369,21 @@ static void lock_volume_updates() {
 }
 #endif
 
-// --- BUTTON CONTROLS ---
+// --- OPTIMISTIC PLAY/PAUSE UI TRIGGER ---
+static void send_playpause_cb(void *data) {
+  s_playpause_delay_timer = NULL;
+  send_command("playpause");
+}
 
+static void trigger_optimistic_playpause() {
+  s_is_playing = !s_is_playing;
+  if (s_status_layer) layer_mark_dirty(s_status_layer);
+  vibes_short_pulse();
+  if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
+  s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
+}
+
+// --- BUTTON CONTROLS ---
 static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
   mark_user_interaction();
 
@@ -385,15 +399,7 @@ static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
     cancel_zone_timer();
     s_mode = MODE_TRACK;
     update_ui();
-  }
-  #if ENABLE_VOLUME
-  else if (s_mode == MODE_VOLUME) {
-    cancel_vol_timer();
-    s_mode = MODE_TRACK;
-    update_ui();
-  }
-  #endif
-  else {
+  } else {
     window_stack_pop(true);
   }
 }
@@ -404,20 +410,14 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
 
   if (s_mode == MODE_TRACK) {
     #if ENABLE_VOLUME
-    if (s_updown_volume) {
-      if (!s_is_fixed) {
-        if (s_volume != -1) { s_volume += 2; if (s_volume > 100) s_volume = 100; }
-        flash_volume();
-        send_command("vol_up");
-        lock_volume_updates();
-      } else {
-        flash_volume_ms(500);
-      }
+    if (!s_is_fixed) {
+      if (s_volume != -1) { s_volume += 2; if (s_volume > 100) s_volume = 100; }
+      send_command("vol_up");
+      lock_volume_updates();
+      flash_volume_ms(2000);
     } else {
-      send_command("previous");
+      flash_volume_ms(500);
     }
-    #else
-    send_command("previous");
     #endif
   } else if (s_mode == MODE_ZONE) {
     if (s_btns_locked) return;
@@ -433,17 +433,6 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
     send_command("prev_zone");
     lock_buttons_temporarily(750);
   }
-  #if ENABLE_VOLUME
-  else if (s_mode == MODE_VOLUME) {
-    reset_vol_timer();
-    if (!s_is_fixed) {
-      if (s_volume != -1) { s_volume += 2; if (s_volume > 100) s_volume = 100; }
-      update_ui();
-      send_command("vol_up");
-      lock_volume_updates();
-    }
-  }
-  #endif
 }
 
 static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
@@ -452,20 +441,14 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
 
   if (s_mode == MODE_TRACK) {
     #if ENABLE_VOLUME
-    if (s_updown_volume) {
-      if (!s_is_fixed) {
-        if (s_volume != -1) { s_volume -= 2; if (s_volume < 0) s_volume = 0; }
-        flash_volume();
-        send_command("vol_down");
-        lock_volume_updates();
-      } else {
-        flash_volume_ms(500);
-      }
+    if (!s_is_fixed) {
+      if (s_volume != -1) { s_volume -= 2; if (s_volume < 0) s_volume = 0; }
+      send_command("vol_down");
+      lock_volume_updates();
+      flash_volume_ms(2000);
     } else {
-      send_command("next");
+      flash_volume_ms(500);
     }
-    #else
-    send_command("next");
     #endif
   } else if (s_mode == MODE_ZONE) {
     if (s_btns_locked) return;
@@ -481,17 +464,6 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
     send_command("next_zone");
     lock_buttons_temporarily(750);
   }
-  #if ENABLE_VOLUME
-  else if (s_mode == MODE_VOLUME) {
-    reset_vol_timer();
-    if (!s_is_fixed) {
-      if (s_volume != -1) { s_volume -= 2; if (s_volume < 0) s_volume = 0; }
-      update_ui();
-      send_command("vol_down");
-      lock_volume_updates();
-    }
-  }
-  #endif
 }
 
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
@@ -515,47 +487,32 @@ static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   }
   else if (s_mode == MODE_ZONE) {
     cancel_zone_timer();
-    #if ENABLE_VOLUME
-    if (s_updown_volume) {
-      send_command("status");
-      s_mode = MODE_TRACK;
-    } else {
-      s_mode = MODE_VOLUME;
-      reset_vol_timer();
-    }
-    #else
-    send_command("status");
-    s_mode = MODE_TRACK;
-    #endif
-  }
-  #if ENABLE_VOLUME
-  else if (s_mode == MODE_VOLUME) {
-    cancel_vol_timer();
     send_command("status");
     s_mode = MODE_TRACK;
   }
-  #endif
 
   update_ui();
 }
 
-static void send_playpause_cb(void *data) {
-  s_playpause_delay_timer = NULL;
-  send_command("playpause");
+static void up_long_click_handler(ClickRecognizerRef recognizer, void *context) {
+  mark_user_interaction();
+  if (s_mode == MODE_ERROR || s_btns_locked) return;
+  vibes_short_pulse();
+  send_command("previous");
+}
+
+static void down_long_click_handler(ClickRecognizerRef recognizer, void *context) {
+  mark_user_interaction();
+  if (s_mode == MODE_ERROR || s_btns_locked) return;
+  vibes_short_pulse();
+  send_command("next");
 }
 
 static void select_long_click_handler(ClickRecognizerRef recognizer, void *context) {
   mark_user_interaction();
-  if (s_mode == MODE_ERROR) return;
-  if (s_btns_locked && s_mode == MODE_ZONE) return;
-
-  vibes_short_pulse();
-  if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
-  s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
+  if (s_mode == MODE_ERROR || s_btns_locked) return;
+  trigger_optimistic_playpause();
   if (s_mode == MODE_ZONE) reset_zone_timer();
-  #if ENABLE_VOLUME
-  if (s_mode == MODE_VOLUME) reset_vol_timer();
-  #endif
 }
 
 static void click_config_provider(void *context) {
@@ -563,14 +520,16 @@ static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
   window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
+
+  window_long_click_subscribe(BUTTON_ID_UP, 600, up_long_click_handler, NULL);
+  window_long_click_subscribe(BUTTON_ID_DOWN, 600, down_long_click_handler, NULL);
   window_long_click_subscribe(BUTTON_ID_SELECT, 800, select_long_click_handler, NULL);
 }
 
 #ifdef PBL_TOUCH
 static void touch_handler(const TouchEvent *event, void *context) {
   mark_user_interaction();
-  if (s_mode == MODE_ERROR) return;
-  if (s_btns_locked && s_mode == MODE_ZONE) return;
+  if (s_mode == MODE_ERROR || s_btns_locked || !s_enable_touch || !s_app_in_focus) return;
 
   if (event->type == TouchEvent_Touchdown) {
     Layer *window_layer = window_get_root_layer(s_window);
@@ -579,17 +538,10 @@ static void touch_handler(const TouchEvent *event, void *context) {
     GPoint tap_loc = GPoint(event->x, event->y);
     if (grect_contains_point(&status_target, &tap_loc)) {
       if (s_mode == MODE_TRACK) {
-        vibes_short_pulse();
-        if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
-        s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
+        trigger_optimistic_playpause();
       } else if (s_mode == MODE_ZONE) {
         reset_zone_timer();
       }
-      #if ENABLE_VOLUME
-      else if (s_mode == MODE_VOLUME) {
-        reset_vol_timer();
-      }
-      #endif
     }
   }
 }
@@ -598,22 +550,14 @@ static void touch_handler(const TouchEvent *event, void *context) {
 #ifndef PBL_TOUCH
 static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   mark_user_interaction();
-  if (s_mode == MODE_ERROR) return;
-  if (s_btns_locked && s_mode == MODE_ZONE) return;
+  if (s_mode == MODE_ERROR || s_btns_locked || !s_enable_touch || !s_app_in_focus) return;
 
   if (axis == ACCEL_AXIS_Z) {
     if (s_mode == MODE_TRACK) {
-      vibes_short_pulse();
-      if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
-      s_playpause_delay_timer = app_timer_register(100, send_playpause_cb, NULL);
+      trigger_optimistic_playpause();
     } else if (s_mode == MODE_ZONE) {
       reset_zone_timer();
     }
-    #if ENABLE_VOLUME
-    else if (s_mode == MODE_VOLUME) {
-      reset_vol_timer();
-    }
-    #endif
   }
 }
 #endif
@@ -625,8 +569,16 @@ static void status_layer_update_proc(Layer *layer, GContext *ctx) {
   if (s_mode == MODE_TRACK) {
     graphics_context_set_fill_color(ctx, GColorWhite);
     if (s_is_playing) {
-      graphics_fill_rect(ctx, GRect(bounds.size.w/2 - 6, bounds.size.h/2 - 8, 4, 16), 0, GCornerNone);
-      graphics_fill_rect(ctx, GRect(bounds.size.w/2 + 2, bounds.size.h/2 - 8, 4, 16), 0, GCornerNone);
+      if (s_font_size == 2) {
+        graphics_fill_rect(ctx, GRect(bounds.size.w/2 - 8, bounds.size.h/2 - 12, 6, 24), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(bounds.size.w/2 + 2, bounds.size.h/2 - 12, 6, 24), 0, GCornerNone);
+      } else if (s_font_size == 1) {
+        graphics_fill_rect(ctx, GRect(bounds.size.w/2 - 6, bounds.size.h/2 - 8, 4, 16), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(bounds.size.w/2 + 2, bounds.size.h/2 - 8, 4, 16), 0, GCornerNone);
+      } else {
+        graphics_fill_rect(ctx, GRect(bounds.size.w/2 - 4, bounds.size.h/2 - 6, 3, 12), 0, GCornerNone);
+        graphics_fill_rect(ctx, GRect(bounds.size.w/2 + 1, bounds.size.h/2 - 6, 3, 12), 0, GCornerNone);
+      }
     } else {
       if (s_play_path) {
         gpath_move_to(s_play_path, GPoint(bounds.size.w/2, bounds.size.h/2));
@@ -638,9 +590,6 @@ static void status_layer_update_proc(Layer *layer, GContext *ctx) {
     const char* mode_text = "";
 
     if (s_mode == MODE_ZONE) mode_text = "Zone Mode";
-    #if ENABLE_VOLUME
-    else if (s_mode == MODE_VOLUME) mode_text = "Volume Mode";
-    #endif
 
     graphics_draw_text(ctx, mode_text, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
                        GRect(0, -2, bounds.size.w, 20),
@@ -677,6 +626,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
       persist_write_int(PERSIST_KEY_FONT, s_font_size);
       apply_fonts();
       start_marquee();
+      if (s_status_layer) layer_mark_dirty(s_status_layer);
     }
   }
 
@@ -689,17 +639,8 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     }
   }
 
-  if ((t = dict_find(iterator, KEY_UPDOWN_VOL))) {
-    bool requested_updown = (get_tuple_int(t) == 1);
-    if (s_updown_volume != requested_updown) {
-      s_updown_volume = requested_updown;
-      persist_write_bool(PERSIST_KEY_UPDOWN_VOL, s_updown_volume);
-    }
-  }
-
   if ((t = dict_find(iterator, KEY_TIMEOUT_APP))) {
     int new_timeout = get_tuple_int(t);
-    // THE FIX: ONLY mark user interaction and reset timer if the config setting actually changed!
     if (s_timeout_app_min != new_timeout) {
       s_timeout_app_min = new_timeout;
       persist_write_int(PERSIST_KEY_TIMEOUT_APP, s_timeout_app_min);
@@ -713,6 +654,14 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
       s_timeout_disc_min = new_timeout;
       persist_write_int(PERSIST_KEY_TIMEOUT_DISC, s_timeout_disc_min);
       if (s_mode == MODE_ERROR) start_disconnect_timer();
+    }
+  }
+
+  if ((t = dict_find(iterator, KEY_ENABLE_TOUCH))) {
+    bool requested_touch = (get_tuple_int(t) == 1);
+    if (s_enable_touch != requested_touch) {
+      s_enable_touch = requested_touch;
+      persist_write_bool(PERSIST_KEY_TOUCH, s_enable_touch);
     }
   }
 
@@ -745,15 +694,18 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   }
 
   if ((t = dict_find(iterator, KEY_IS_PLAYING))) {
-    s_is_playing = (get_tuple_int(t) == 1);
-    if (s_status_layer) layer_mark_dirty(s_status_layer);
+    bool is_playing = (get_tuple_int(t) == 1);
+    if (s_is_playing != is_playing) {
+      s_is_playing = is_playing;
+      if (s_status_layer) layer_mark_dirty(s_status_layer);
+    }
   }
 
   #if ENABLE_VOLUME
   if ((t = dict_find(iterator, KEY_VOLUME_VAL))) {
     if (!s_ignore_vol_updates) {
       s_volume = get_tuple_int(t);
-      if (s_mode == MODE_VOLUME || s_is_flashing_vol) update_ui();
+      if (s_is_flashing_vol) update_ui();
     }
   }
   #endif
@@ -765,8 +717,6 @@ static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
   window_set_background_color(window, GColorBlack);
-
-  s_play_path = gpath_create(&s_play_path_info);
 
   s_logo_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_LOGO);
   s_logo_layer = bitmap_layer_create(GRect(0, NATIVE_Y(5, 12), bounds.size.w, NATIVE_H(35, 35)));
@@ -816,6 +766,8 @@ static void window_load(Window *window) {
 
   apply_fonts();
   s_window_loaded = true;
+
+  mark_user_interaction();
 }
 
 static void window_unload(Window *window) {
@@ -832,7 +784,6 @@ static void window_unload(Window *window) {
   cancel_zone_timer();
 
   #if ENABLE_VOLUME
-  cancel_vol_timer();
   if (s_vol_ignore_timer) app_timer_cancel(s_vol_ignore_timer);
   if (s_vol_flash_timer) app_timer_cancel(s_vol_flash_timer);
   text_layer_destroy(s_vol_layer);
@@ -850,13 +801,17 @@ static void window_unload(Window *window) {
 static void init(void) {
   if (persist_exists(PERSIST_KEY_FONT)) s_font_size = persist_read_int(PERSIST_KEY_FONT);
   if (persist_exists(PERSIST_KEY_SCROLL)) s_enable_scroll = persist_read_bool(PERSIST_KEY_SCROLL);
-  if (persist_exists(PERSIST_KEY_UPDOWN_VOL)) s_updown_volume = persist_read_bool(PERSIST_KEY_UPDOWN_VOL);
-  else s_updown_volume = true;
   if (persist_exists(PERSIST_KEY_TIMEOUT_APP)) s_timeout_app_min = persist_read_int(PERSIST_KEY_TIMEOUT_APP);
   if (persist_exists(PERSIST_KEY_TIMEOUT_DISC)) s_timeout_disc_min = persist_read_int(PERSIST_KEY_TIMEOUT_DISC);
+  if (persist_exists(PERSIST_KEY_TOUCH)) s_enable_touch = persist_read_bool(PERSIST_KEY_TOUCH);
 
   s_window = window_create();
   window_set_click_config_provider(s_window, click_config_provider);
+
+  app_focus_service_subscribe_handlers((AppFocusHandlers){
+    .will_focus = focus_handler,
+    .did_focus = focus_handler
+  });
 
   #ifdef PBL_TOUCH
   if (touch_service_is_enabled()) touch_service_subscribe(touch_handler, NULL);
@@ -871,16 +826,17 @@ static void init(void) {
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
 
   window_stack_push(s_window, true);
-
-  mark_user_interaction();
 }
 
 static void deinit(void) {
+  app_focus_service_unsubscribe();
+
   #ifdef PBL_TOUCH
   touch_service_unsubscribe();
   #else
   accel_tap_service_unsubscribe();
   #endif
+
   connection_service_unsubscribe();
   window_destroy(s_window);
 }

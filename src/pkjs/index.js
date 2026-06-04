@@ -109,10 +109,7 @@ function sendToWatch(responseText) {
     var rawFont = localStorage.getItem('font_size');
     var savedFont = (rawFont === 'large' || rawFont === '2') ? 2 : (rawFont === 'small' || rawFont === '0') ? 0 : 1;
     var isScrollEnabled = (localStorage.getItem('scroll_text') === '1') ? 1 : 0;
-
-    var updownRaw = localStorage.getItem('updown_vol');
-    if (updownRaw === null) updownRaw = '1';
-    var isUpDownVol = (updownRaw === '1') ? 1 : 0;
+    var isTouchEnabled = (localStorage.getItem('enable_touch') === '0') ? 0 : 1;
 
     var timeApp = parseInt(localStorage.getItem('timeout_app') || '0', 10);
     var timeDisc = parseInt(localStorage.getItem('timeout_disc') || '0', 10);
@@ -127,9 +124,9 @@ function sendToWatch(responseText) {
                         'error': 0,
                         'font_size': savedFont,
                         'scroll_text': isScrollEnabled,
-                        'updown_vol': isUpDownVol,
                         'timeout_app': timeApp,
-                        'timeout_disc': timeDisc
+                        'timeout_disc': timeDisc,
+                        'enable_touch': isTouchEnabled
     });
   } catch (err) { console.log("JSON Parse Error: " + err); }
 }
@@ -166,7 +163,9 @@ Pebble.addEventListener('appmessage', function(e) {
     }
   }
 
-  if ((command === "next" || command === "previous") && !g_isPlaying) {
+  if (command === "playpause") {
+    sendBridgeCommand(command);
+  } else if ((command === "next" || command === "previous") && !g_isPlaying) {
     sendBridgeCommand(command);
     setTimeout(function() { sendBridgeCommand("pause"); }, 2500);
   } else {
@@ -179,10 +178,9 @@ Pebble.addEventListener('showConfiguration', function(e) {
   var port = localStorage.getItem('bridge_port') || DEFAULT_PORT;
   var rawFont = localStorage.getItem('font_size') || "1";
   var scrollText = localStorage.getItem('scroll_text') || '0';
-  var updownVol = localStorage.getItem('updown_vol');
-  if (updownVol === null) updownVol = '1';
   var timeApp = localStorage.getItem('timeout_app') || '0';
   var timeDisc = localStorage.getItem('timeout_disc') || '0';
+  var enableTouch = localStorage.getItem('enable_touch') || '1';
 
   var cacheBuster = Math.round(Math.random() * 10000);
 
@@ -191,10 +189,9 @@ Pebble.addEventListener('showConfiguration', function(e) {
   "&port=" + encodeURIComponent(port) +
   "&font_size=" + encodeURIComponent(rawFont) +
   "&scroll_text=" + encodeURIComponent(scrollText) +
-  "&updown_vol=" + encodeURIComponent(updownVol) +
   "&timeout_app=" + encodeURIComponent(timeApp) +
   "&timeout_disc=" + encodeURIComponent(timeDisc) +
-  "&support_updown=1";
+  "&enable_touch=" + encodeURIComponent(enableTouch);
 
   Pebble.openURL(finalUrl);
 });
@@ -208,9 +205,9 @@ Pebble.addEventListener('webviewclosed', function(e) {
         localStorage.setItem('bridge_port', config.port || "3000");
         localStorage.setItem('font_size', config.font_size || "1");
         localStorage.setItem('scroll_text', config.scroll_text || "0");
-        localStorage.setItem('updown_vol', config.updown_vol || "1");
         localStorage.setItem('timeout_app', config.timeout_app || "0");
         localStorage.setItem('timeout_disc', config.timeout_disc || "0");
+        localStorage.setItem('enable_touch', config.enable_touch || "1");
         fetchStatus();
       }
     } catch(err) {}
