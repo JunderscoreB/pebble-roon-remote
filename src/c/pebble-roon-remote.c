@@ -5,7 +5,7 @@
  * Released under the MIT License.
  *
  * AI Disclosure: Portions of this file were generated and optimized with the assistance of generative AI.
- * (Google Gemini).
+ * Co-Authored-By: Google Gemini <noreply@google.com>
  */
 
 #include <pebble.h>
@@ -96,6 +96,10 @@ static AppTimer *s_btn_lock_timer = NULL;
 // App Timeout Timers
 static AppTimer *s_app_idle_timer = NULL;
 static AppTimer *s_disc_idle_timer = NULL;
+
+// Play Optimistic Lock
+static AppTimer *s_play_ignore_timer = NULL;
+static bool s_ignore_play_updates = false;
 
 static bool s_btns_locked = false;
 static bool s_is_playing = false;
@@ -370,6 +374,18 @@ static void lock_volume_updates() {
 #endif
 
 // --- OPTIMISTIC PLAY/PAUSE UI TRIGGER ---
+static void play_ignore_cb(void *data) {
+  s_ignore_play_updates = false;
+  s_play_ignore_timer = NULL;
+}
+
+static void lock_play_updates() {
+  s_ignore_play_updates = true;
+  if (s_play_ignore_timer) app_timer_cancel(s_play_ignore_timer);
+  // Ignore incoming play state from bridge for 2 seconds to allow Roon to catch up
+  s_play_ignore_timer = app_timer_register(2000, play_ignore_cb, NULL);
+}
+
 static void send_playpause_cb(void *data) {
   s_playpause_delay_timer = NULL;
   send_command("playpause");
@@ -377,6 +393,7 @@ static void send_playpause_cb(void *data) {
 
 static void trigger_optimistic_playpause() {
   s_is_playing = !s_is_playing;
+  lock_play_updates();
   if (s_status_layer) layer_mark_dirty(s_status_layer);
   vibes_short_pulse();
   if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
@@ -411,7 +428,7 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_TRACK) {
     #if ENABLE_VOLUME
     if (!s_is_fixed) {
-      if (s_volume != -1) { s_volume += 2; if (s_volume > 100) s_volume = 100; }
+      if (s_volume != -1) { s_volume += 2; if (s_volume > 100) s_volume = 100; } // Reverted to +2
       send_command("vol_up");
       lock_volume_updates();
       flash_volume_ms(2000);
@@ -421,17 +438,11 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
     #endif
   } else if (s_mode == MODE_ZONE) {
     if (s_btns_locked) return;
-
     reset_zone_timer();
     stop_marquee();
 
-    snprintf(s_zone_buf, sizeof(s_zone_buf), "Switching...");
-    snprintf(s_track_buf, sizeof(s_track_buf), "...");
-    snprintf(s_artist_buf, sizeof(s_artist_buf), "...");
-    update_ui();
-
     send_command("prev_zone");
-    lock_buttons_temporarily(750);
+    lock_buttons_temporarily(300);
   }
 }
 
@@ -442,7 +453,7 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_TRACK) {
     #if ENABLE_VOLUME
     if (!s_is_fixed) {
-      if (s_volume != -1) { s_volume -= 2; if (s_volume < 0) s_volume = 0; }
+      if (s_volume != -1) { s_volume -= 2; if (s_volume < 0) s_volume = 0; } // Reverted to -2
       send_command("vol_down");
       lock_volume_updates();
       flash_volume_ms(2000);
@@ -452,17 +463,11 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
     #endif
   } else if (s_mode == MODE_ZONE) {
     if (s_btns_locked) return;
-
     reset_zone_timer();
     stop_marquee();
 
-    snprintf(s_zone_buf, sizeof(s_zone_buf), "Switching...");
-    snprintf(s_track_buf, sizeof(s_track_buf), "...");
-    snprintf(s_artist_buf, sizeof(s_artist_buf), "...");
-    update_ui();
-
     send_command("next_zone");
-    lock_buttons_temporarily(750);
+    lock_buttons_temporarily(300);
   }
 }
 
@@ -694,10 +699,12 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   }
 
   if ((t = dict_find(iterator, KEY_IS_PLAYING))) {
-    bool is_playing = (get_tuple_int(t) == 1);
-    if (s_is_playing != is_playing) {
-      s_is_playing = is_playing;
-      if (s_status_layer) layer_mark_dirty(s_status_layer);
+    if (!s_ignore_play_updates) {
+      bool is_playing = (get_tuple_int(t) == 1);
+      if (s_is_playing != is_playing) {
+        s_is_playing = is_playing;
+        if (s_status_layer) layer_mark_dirty(s_status_layer);
+      }
     }
   }
 
@@ -779,6 +786,7 @@ static void window_unload(Window *window) {
   if (s_btn_lock_timer) app_timer_cancel(s_btn_lock_timer);
   if (s_app_idle_timer) app_timer_cancel(s_app_idle_timer);
   if (s_disc_idle_timer) app_timer_cancel(s_disc_idle_timer);
+  if (s_play_ignore_timer) app_timer_cancel(s_play_ignore_timer);
 
   stop_marquee();
   cancel_zone_timer();

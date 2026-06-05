@@ -5,7 +5,7 @@
  * Released under the MIT License.
  *
  * AI Disclosure: Portions of this file were generated and optimized with the assistance of generative AI.
- * (Google Gemini).
+ * Co-Authored-By: Google Gemini <noreply@google.com>
  */
 
 var devConfig = require('../../dev_config.json');
@@ -17,11 +17,6 @@ var g_isPlaying = false;
 var g_messageQueue = [];
 var g_isSendingMessage = false;
 var g_pollTimer = null;
-
-var g_cachedZones = [];
-var g_currentZoneId = null;
-var g_zoneSwitchTimer = null;
-var g_isSwitchingZone = false;
 
 function getBridgeUrl() {
   var ip = localStorage.getItem('bridge_ip') || DEFAULT_IP;
@@ -57,9 +52,15 @@ function sendBridgeCommand(command) {
   var req = new XMLHttpRequest();
   req.open('GET', getBridgeUrl() + command, true);
   req.onload = function() {
-    if (req.status === 200) sendToWatch(req.responseText);
+    if (req.status === 200) {
+      sendToWatch(req.responseText);
+      // Fast poll instantly following a command to quickly catch state changes from the Roon API
+      if (command !== 'status') {
+        setTimeout(fetchStatus, 350);
+      }
+    }
   };
-    req.send(null);
+  req.send(null);
 }
 
 function scheduleNextFetch() {
@@ -86,8 +87,6 @@ function sendToWatch(responseText) {
   try {
     var response = JSON.parse(responseText);
 
-    if (response.zones) g_cachedZones = response.zones;
-    if (response.zone_id && !g_isSwitchingZone) g_currentZoneId = response.zone_id;
     if (response.is_playing !== undefined) g_isPlaying = response.is_playing;
 
     var safeVolume = -1;
@@ -115,18 +114,18 @@ function sendToWatch(responseText) {
     var timeDisc = parseInt(localStorage.getItem('timeout_disc') || '0', 10);
 
     sendAppMessageQueue({
-      'zone_name': (!g_isSwitchingZone) ? (response.zone || "Unknown") : undefined,
-                        'track': response.track || "",
-                        'artist': response.artist || "",
-                        'is_playing': response.is_playing ? 1 : 0,
-                        'volume_val': safeVolume,
-                        'is_fixed': isFixed ? 1 : 0,
-                        'error': 0,
-                        'font_size': savedFont,
-                        'scroll_text': isScrollEnabled,
-                        'timeout_app': timeApp,
-                        'timeout_disc': timeDisc,
-                        'enable_touch': isTouchEnabled
+      'zone_name': response.zone || "Unknown",
+      'track': response.track || "",
+      'artist': response.artist || "",
+      'is_playing': response.is_playing ? 1 : 0,
+      'volume_val': safeVolume,
+      'is_fixed': isFixed ? 1 : 0,
+      'error': 0,
+      'font_size': savedFont,
+      'scroll_text': isScrollEnabled,
+      'timeout_app': timeApp,
+      'timeout_disc': timeDisc,
+      'enable_touch': isTouchEnabled
     });
   } catch (err) { console.log("JSON Parse Error: " + err); }
 }
@@ -137,32 +136,7 @@ Pebble.addEventListener('appmessage', function(e) {
   var command = e.payload['command'] || e.payload['0'] || e.payload[0];
   if (command === "retry_connection") { fetchStatus(); return; }
 
-  if (command === "next_zone" || command === "prev_zone") {
-    if (g_cachedZones.length > 0) {
-      g_isSwitchingZone = true;
-      var idx = g_cachedZones.findIndex(function(z) { return z.id === g_currentZoneId; });
-      if (idx === -1) idx = 0;
-
-      if (command === "next_zone") idx = (idx + 1) % g_cachedZones.length;
-      else idx = (idx - 1 + g_cachedZones.length) % g_cachedZones.length;
-
-      g_currentZoneId = g_cachedZones[idx].id;
-
-      sendAppMessageQueue({
-        'zone_name': g_cachedZones[idx].name,
-        'track': "Switching...",
-        'artist': " "
-      });
-
-      if (g_zoneSwitchTimer) clearTimeout(g_zoneSwitchTimer);
-      g_zoneSwitchTimer = setTimeout(function() {
-        sendBridgeCommand("set_zone?id=" + encodeURIComponent(g_currentZoneId));
-        setTimeout(function() { g_isSwitchingZone = false; }, 1000);
-      }, 500);
-      return;
-    }
-  }
-
+  // Simply route everything direct to the bridge
   if (command === "playpause") {
     sendBridgeCommand(command);
   } else if ((command === "next" || command === "previous") && !g_isPlaying) {

@@ -5,7 +5,7 @@
  * Released under the MIT License.
  *
  * AI Disclosure: Portions of this file were generated and optimized with the assistance of generative AI.
- * (Google Gemini).
+ * Co-Authored-By: Google Gemini <noreply@google.com>
  */
 
 var RoonApi          = require("node-roon-api"),
@@ -21,7 +21,7 @@ var current_zone_id = null;
 var roon = new RoonApi({
     extension_id:        'com.junderscoreb.pebble.remote',
     display_name:        "Pebble Roon Remote",
-    display_version:     "1.0.0",
+    display_version:     "1.1.0",
     publisher:           "J_B",
     email:               "dev@example.com",
     log_level:           "none",
@@ -120,17 +120,25 @@ app.get('/previous', (req, res) => {
 app.get('/vol_up', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", 1);
+        // Fallback to relative_step, but keep the synchronous callback to prevent jitter
+        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", 1, function(error) {
+            res.json(buildStatus());
+        });
+    } else {
+        res.json(buildStatus());
     }
-    setTimeout(() => { res.json(buildStatus()); }, 250);
 });
 
 app.get('/vol_down', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", -1);
+        // Fallback to relative_step, but keep the synchronous callback to prevent jitter
+        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", -1, function(error) {
+            res.json(buildStatus());
+        });
+    } else {
+        res.json(buildStatus());
     }
-    setTimeout(() => { res.json(buildStatus()); }, 250);
 });
 
 app.get('/next_zone', (req, res) => {
@@ -140,7 +148,7 @@ app.get('/next_zone', (req, res) => {
         var nextIdx = (idx + 1) % keys.length;
         current_zone_id = keys[nextIdx];
     }
-    setTimeout(() => { res.json(buildStatus()); }, 300);
+    res.json(buildStatus());
 });
 
 app.get('/prev_zone', (req, res) => {
@@ -150,7 +158,7 @@ app.get('/prev_zone', (req, res) => {
         var prevIdx = (idx - 1 + keys.length) % keys.length;
         current_zone_id = keys[prevIdx];
     }
-    setTimeout(() => { res.json(buildStatus()); }, 300);
+    res.json(buildStatus());
 });
 
 app.listen(3000, () => {
