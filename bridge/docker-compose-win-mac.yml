@@ -1,0 +1,10 @@
+services:
+  pebble-roon-bridge:
+    build: .
+    container_name: pebble-roon-bridge
+    ports:
+      - "3000:3000"
+    environment:
+      # IMPORTANT: Replace 192.168.1.100 with the actual IP address of your Roon Core
+      - ROON_CORE_IP=192.168.1.100
+    restart: unless-stopped

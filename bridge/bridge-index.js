@@ -1,5 +1,5 @@
 /*
- * Pebble Roon Remote
+ * Pebble Roon Remote Bridge
  * Copyright (c) 2026 J_B
  *
  * Released under the MIT License.
@@ -56,8 +56,23 @@ roon.init_services({
 });
 
 svc_status.set_status("Extension enabled", false);
-roon.start_discovery();
 
+// ---------------------------------------------------------
+// DISCOVERY LOGIC (UDP vs Direct WebSocket)
+// ---------------------------------------------------------
+// If a user provides an IP (e.g. Windows Docker users), connect directly.
+// Otherwise, rely on native UDP multicast discovery.
+if (process.env.ROON_CORE_IP) {
+    console.log("Connecting directly to Roon Core at " + process.env.ROON_CORE_IP);
+    roon.ws_connect({ host: process.env.ROON_CORE_IP, port: 9330 });
+} else {
+    console.log("Starting UDP Discovery...");
+    roon.start_discovery();
+}
+
+// ---------------------------------------------------------
+// HELPER FUNCTIONS
+// ---------------------------------------------------------
 function getZone() {
     if (!core) return null;
     if (!current_zone_id || !zones[current_zone_id]) {
@@ -100,10 +115,23 @@ function buildStatus() {
     };
 }
 
+// ---------------------------------------------------------
+// EXPRESS API ROUTES
+// ---------------------------------------------------------
 app.get('/status', (req, res) => { res.json(buildStatus()); });
 
 app.get('/playpause', (req, res) => {
     if (core && getZone()) core.services.RoonApiTransport.control(getZone(), "playpause");
+    res.json(buildStatus());
+});
+
+app.get('/pause_all', (req, res) => {
+    if (core) {
+        var transport = core.services.RoonApiTransport;
+        Object.keys(zones).forEach(zone_id => {
+            transport.control(zones[zone_id], "pause");
+        });
+    }
     res.json(buildStatus());
 });
 
@@ -120,7 +148,6 @@ app.get('/previous', (req, res) => {
 app.get('/vol_up', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        // Fallback to relative_step, but keep the synchronous callback to prevent jitter
         core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", 1, function(error) {
             res.json(buildStatus());
         });
@@ -132,7 +159,6 @@ app.get('/vol_up', (req, res) => {
 app.get('/vol_down', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        // Fallback to relative_step, but keep the synchronous callback to prevent jitter
         core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", -1, function(error) {
             res.json(buildStatus());
         });
