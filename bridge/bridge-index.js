@@ -60,8 +60,6 @@ svc_status.set_status("Extension enabled", false);
 // ---------------------------------------------------------
 // DISCOVERY LOGIC (UDP vs Direct WebSocket)
 // ---------------------------------------------------------
-// If a user provides an IP (e.g. Windows Docker users), connect directly.
-// Otherwise, rely on native UDP multicast discovery.
 if (process.env.ROON_CORE_IP) {
     console.log("Connecting directly to Roon Core at " + process.env.ROON_CORE_IP);
     roon.ws_connect({ host: process.env.ROON_CORE_IP, port: 9330 });
@@ -126,13 +124,30 @@ app.get('/playpause', (req, res) => {
 });
 
 app.get('/pause_all', (req, res) => {
+    console.log("\n[Command] Executing Pause All Zones");
+
     if (core) {
         var transport = core.services.RoonApiTransport;
-        Object.keys(zones).forEach(zone_id => {
-            transport.control(zones[zone_id], "pause");
+        var staggerDelay = 0;
+
+        Object.values(zones).forEach(zone => {
+            setTimeout(() => {
+                console.log(" -> Pausing: " + zone.display_name);
+                transport.control(zone, "pause");
+            }, staggerDelay);
+            staggerDelay += 50;
         });
+
+        // FIX: Wait for stagger to finish + 250ms buffer to allow Roon
+        // to update its internal state before sending the status back to Pebble
+        setTimeout(() => {
+            res.json(buildStatus());
+        }, staggerDelay + 250);
+
+    } else {
+        console.log("[Error] No Core connected during pause_all attempt.");
+        res.json(buildStatus());
     }
-    res.json(buildStatus());
 });
 
 app.get('/next', (req, res) => {

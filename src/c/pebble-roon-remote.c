@@ -90,7 +90,6 @@ static bool s_is_flashing_vol = false;
 // Timers & State
 static AppTimer *s_playpause_delay_timer = NULL;
 static AppTimer *s_zone_revert_timer = NULL;
-static AppTimer *s_network_cooldown_timer = NULL;
 static AppTimer *s_btn_lock_timer = NULL;
 
 // App Timeout Timers
@@ -104,7 +103,6 @@ static bool s_ignore_play_updates = false;
 static bool s_btns_locked = false;
 static bool s_is_playing = false;
 static bool s_is_fixed = false;
-static bool s_network_ready = true;
 static bool s_app_in_focus = true;
 
 // Buffers
@@ -159,26 +157,24 @@ static void focus_handler(bool in_focus) {
   s_app_in_focus = in_focus;
 }
 
-static void cooldown_cb(void *data) {
-  s_network_ready = true;
-  s_network_cooldown_timer = NULL;
-}
-
-static void trigger_cooldown() {
-  s_network_ready = false;
-  if (s_network_cooldown_timer) app_timer_cancel(s_network_cooldown_timer);
-  s_network_cooldown_timer = app_timer_register(150, cooldown_cb, NULL);
-}
-
+// --- NATIVE OUTBOX DISPATCHER ---
 static void send_command(char *cmd) {
   if (!s_window_loaded) return;
-  if (!s_network_ready) return;
 
   DictionaryIterator *iter;
-  if (app_message_outbox_begin(&iter) == APP_MSG_OK) {
+  AppMessageResult result = app_message_outbox_begin(&iter);
+
+  if (result == APP_MSG_OK) {
     dict_write_cstring(iter, KEY_COMMAND, cmd);
-    app_message_outbox_send();
-    trigger_cooldown();
+    result = app_message_outbox_send();
+
+    if (result != APP_MSG_OK) {
+      APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox dispatch failed! Kernel Code: %d", (int)result);
+    } else {
+      APP_LOG(APP_LOG_LEVEL_INFO, "Dispatched command upstream: %s", cmd);
+    }
+  } else {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox allocation failed! Error Code: %d", (int)result);
   }
 }
 
@@ -382,7 +378,6 @@ static void play_ignore_cb(void *data) {
 static void lock_play_updates() {
   s_ignore_play_updates = true;
   if (s_play_ignore_timer) app_timer_cancel(s_play_ignore_timer);
-  // Ignore incoming play state from bridge for 2 seconds to allow Roon to catch up
   s_play_ignore_timer = app_timer_register(2000, play_ignore_cb, NULL);
 }
 
@@ -428,7 +423,7 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_TRACK) {
     #if ENABLE_VOLUME
     if (!s_is_fixed) {
-      if (s_volume != -1) { s_volume += 2; if (s_volume > 100) s_volume = 100; } // Reverted to +2
+      if (s_volume != -1) { s_volume += 2; if (s_volume > 100) s_volume = 100; }
       send_command("vol_up");
       lock_volume_updates();
       flash_volume_ms(2000);
@@ -453,7 +448,7 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (s_mode == MODE_TRACK) {
     #if ENABLE_VOLUME
     if (!s_is_fixed) {
-      if (s_volume != -1) { s_volume -= 2; if (s_volume < 0) s_volume = 0; } // Reverted to -2
+      if (s_volume != -1) { s_volume -= 2; if (s_volume < 0) s_volume = 0; }
       send_command("vol_down");
       lock_volume_updates();
       flash_volume_ms(2000);
@@ -520,6 +515,23 @@ static void select_long_click_handler(ClickRecognizerRef recognizer, void *conte
   if (s_mode == MODE_ZONE) reset_zone_timer();
 }
 
+static void select_double_click_handler(ClickRecognizerRef recognizer, void *context) {
+  mark_user_interaction();
+  if (s_mode == MODE_ERROR || s_btns_locked) return;
+
+  vibes_long_pulse();
+  stop_marquee();
+  safe_set_text(s_track_layer, "Pausing All...");
+  safe_set_text(s_artist_layer, "");
+
+  // FIX: Forcefully wipe the buffers so the watch is guaranteed to redraw
+  // the text when the bridge responds with the next update.
+  s_track_buf[0] = '\0';
+  s_artist_buf[0] = '\0';
+
+  send_command("pause_all");
+}
+
 static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_BACK, back_click_handler);
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
@@ -529,6 +541,8 @@ static void click_config_provider(void *context) {
   window_long_click_subscribe(BUTTON_ID_UP, 600, up_long_click_handler, NULL);
   window_long_click_subscribe(BUTTON_ID_DOWN, 600, down_long_click_handler, NULL);
   window_long_click_subscribe(BUTTON_ID_SELECT, 800, select_long_click_handler, NULL);
+
+  window_multi_click_subscribe(BUTTON_ID_SELECT, 2, 2, 300, true, select_double_click_handler);
 }
 
 #ifdef PBL_TOUCH
@@ -602,6 +616,15 @@ static void status_layer_update_proc(Layer *layer, GContext *ctx) {
   }
 }
 
+// --- LOGGING HANDLERS ---
+static void outbox_sent_handler(DictionaryIterator *iterator, void *context) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "AppMessage cleared link layer successfully.");
+}
+
+static void outbox_failed_handler(DictionaryIterator *iterator, AppMessageResult reason, void *context) {
+  APP_LOG(APP_LOG_LEVEL_ERROR, "Upstream AppMessage transmission dropped. Reason code: %d", (int)reason);
+}
+
 static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
   if (!s_window_loaded) return;
   Tuple *t;
@@ -619,6 +642,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
         s_mode = MODE_TRACK;
         if (s_disc_idle_timer) { app_timer_cancel(s_disc_idle_timer); s_disc_idle_timer = NULL; }
         mark_user_interaction();
+        update_ui();
       }
     }
   }
@@ -782,7 +806,6 @@ static void window_unload(Window *window) {
 
   if (s_play_path) { gpath_destroy(s_play_path); s_play_path = NULL; }
   if (s_playpause_delay_timer) app_timer_cancel(s_playpause_delay_timer);
-  if (s_network_cooldown_timer) app_timer_cancel(s_network_cooldown_timer);
   if (s_btn_lock_timer) app_timer_cancel(s_btn_lock_timer);
   if (s_app_idle_timer) app_timer_cancel(s_app_idle_timer);
   if (s_disc_idle_timer) app_timer_cancel(s_disc_idle_timer);
@@ -830,7 +853,11 @@ static void init(void) {
   connection_service_subscribe((ConnectionHandlers) { .pebble_app_connection_handler = bluetooth_callback });
 
   window_set_window_handlers(s_window, (WindowHandlers) { .load = window_load, .unload = window_unload });
+
   app_message_register_inbox_received(inbox_received_callback);
+  app_message_register_outbox_sent(outbox_sent_handler);
+  app_message_register_outbox_failed(outbox_failed_handler);
+
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
 
   window_stack_push(s_window, true);
@@ -847,6 +874,8 @@ static void deinit(void) {
 
   connection_service_unsubscribe();
   window_destroy(s_window);
+
+  app_message_deregister_callbacks();
 }
 
 int main(void) {
