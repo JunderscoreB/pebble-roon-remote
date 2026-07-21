@@ -21,7 +21,7 @@ var current_zone_id = null;
 var roon = new RoonApi({
     extension_id:        'com.junderscoreb.pebble.remote',
     display_name:        "Pebble Roon Remote",
-    display_version:     "1.1.0",
+    display_version:     "1.1.1",
     publisher:           "J_B",
     email:               "dev@example.com",
     log_level:           "none",
@@ -84,8 +84,6 @@ function buildStatus() {
     var z = getZone();
     if (!z) return { zone: "Searching...", track: "No Core", artist: "", is_playing: false };
 
-    var output = z.outputs && z.outputs.length > 0 ? z.outputs[0] : null;
-
     var line1 = "Unknown";
     var line2 = "";
     if (z.now_playing && z.now_playing.three_line) {
@@ -94,13 +92,18 @@ function buildStatus() {
     }
 
     var vol_val = 0;
-    var is_fixed = false;
+    var is_fixed = true;
 
-    if (output && output.volume) {
-        vol_val = output.volume.value || 0;
-        if (output.volume.type === 'fixed') is_fixed = true;
-    } else {
-        is_fixed = true;
+    // Calculate group average for all non-fixed endpoints
+    if (z.outputs && z.outputs.length > 0) {
+        var valid_outputs = z.outputs.filter(o => o.volume && o.volume.type !== 'fixed');
+
+        if (valid_outputs.length > 0) {
+            is_fixed = false;
+            // Sum all the volumes together and divide by the number of valid outputs
+            var total = valid_outputs.reduce((sum, o) => sum + (o.volume.value || 0), 0);
+            vol_val = Math.round(total / valid_outputs.length);
+        }
     }
 
     return {
@@ -138,7 +141,7 @@ app.get('/pause_all', (req, res) => {
             staggerDelay += 50;
         });
 
-        // FIX: Wait for stagger to finish + 250ms buffer to allow Roon
+        // Wait for stagger to finish + 250ms buffer to allow Roon
         // to update its internal state before sending the status back to Pebble
         setTimeout(() => {
             res.json(buildStatus());
@@ -163,8 +166,23 @@ app.get('/previous', (req, res) => {
 app.get('/vol_up', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", 1, function(error) {
-            res.json(buildStatus());
+        // Filter out endpoints with fixed volume
+        var valid_outputs = z.outputs.filter(o => o.volume && o.volume.type !== 'fixed');
+
+        if (valid_outputs.length === 0) {
+            return res.json(buildStatus());
+        }
+
+        var completed = 0;
+        // Iterate through all valid outputs in the group
+        valid_outputs.forEach(output => {
+            core.services.RoonApiTransport.change_volume(output, "relative_step", 1, function(error) {
+                completed++;
+                // Wait until all outputs have acknowledged the change
+                if (completed === valid_outputs.length) {
+                    res.json(buildStatus());
+                }
+            });
         });
     } else {
         res.json(buildStatus());
@@ -174,8 +192,23 @@ app.get('/vol_up', (req, res) => {
 app.get('/vol_down', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        core.services.RoonApiTransport.change_volume(z.outputs[0], "relative_step", -1, function(error) {
-            res.json(buildStatus());
+        // Filter out endpoints with fixed volume
+        var valid_outputs = z.outputs.filter(o => o.volume && o.volume.type !== 'fixed');
+
+        if (valid_outputs.length === 0) {
+            return res.json(buildStatus());
+        }
+
+        var completed = 0;
+        // Iterate through all valid outputs in the group
+        valid_outputs.forEach(output => {
+            core.services.RoonApiTransport.change_volume(output, "relative_step", -1, function(error) {
+                completed++;
+                // Wait until all outputs have acknowledged the change
+                if (completed === valid_outputs.length) {
+                    res.json(buildStatus());
+                }
+            });
         });
     } else {
         res.json(buildStatus());
