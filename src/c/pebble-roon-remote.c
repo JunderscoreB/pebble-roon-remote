@@ -315,6 +315,13 @@ static void update_ui() {
 
   safe_set_text(s_track_layer, s_track_buf);
 
+  // FIX: Restore artist layer (was missing) and hardcode the extension:wq reminder natively
+  if (strcmp(s_track_buf, "No Core") == 0) {
+    safe_set_text(s_artist_layer, "Is the extension enabled?");
+  } else {
+    safe_set_text(s_artist_layer, s_artist_buf);
+  }
+
   if (s_zone_layer) {
     safe_set_text(s_zone_layer, s_zone_buf);
     if (s_mode == MODE_ZONE) {
@@ -608,7 +615,7 @@ static void status_layer_update_proc(Layer *layer, GContext *ctx) {
     graphics_context_set_text_color(ctx, GColorWhite);
     const char* mode_text = "";
 
-    if (s_mode == MODE_ZONE) mode_text = "Zone Mode";
+    if (s_mode == MODE_ZONE) mode_text = "Select Zone";
 
     graphics_draw_text(ctx, mode_text, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
                        GRect(0, -2, bounds.size.w, 20),
@@ -712,13 +719,23 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
       safe_set_text(s_track_layer, s_track_buf);
       start_marquee();
       #endif
+
+      if (strcmp(s_track_buf, "No Core") == 0) {
+        safe_set_text(s_artist_layer, "Is the extension enabled?");
+      } else {
+        safe_set_text(s_artist_layer, s_artist_buf);
+      }
     }
   }
 
   if ((t = dict_find(iterator, KEY_ARTIST))) {
     if (strcmp(s_artist_buf, t->value->cstring) != 0) {
       snprintf(s_artist_buf, sizeof(s_artist_buf), "%s", t->value->cstring);
-      safe_set_text(s_artist_layer, s_artist_buf);
+      if (strcmp(s_track_buf, "No Core") == 0) {
+        safe_set_text(s_artist_layer, "Is the extension enabled?");
+      } else {
+        safe_set_text(s_artist_layer, s_artist_buf);
+      }
     }
   }
 

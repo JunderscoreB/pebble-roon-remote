@@ -18,10 +18,45 @@ var core;
 var zones = {};
 var current_zone_id = null;
 
+// ---------------------------------------------------------
+// ZONE SORTING & SELECTION LOGIC
+// ---------------------------------------------------------
+function getSortedZones() {
+    return Object.values(zones).sort((a, b) => {
+        var nameA = (a.display_name || "").toLowerCase();
+        var nameB = (b.display_name || "").toLowerCase();
+        return nameA.localeCompare(nameB);
+    });
+}
+
+function selectPlayingOrFirstZone() {
+    var sorted = getSortedZones();
+    if (sorted.length === 0) {
+        current_zone_id = null;
+        return;
+    }
+
+    // Filter all zones that are currently actively playing
+    var playingZones = sorted.filter(z => z.state === "playing");
+
+    if (playingZones.length > 0) {
+        // Default to the first playing zone in alphabetical order
+        current_zone_id = playingZones[0].zone_id;
+        console.log("-> Jumped to active playing zone: " + playingZones[0].display_name);
+    } else if (!current_zone_id || !zones[current_zone_id]) {
+        // If nothing is playing and no zone is selected, choose the first alphabetically
+        current_zone_id = sorted[0].zone_id;
+        console.log("-> Defaulted to first alphabetical zone: " + sorted[0].display_name);
+    }
+}
+
+// ---------------------------------------------------------
+// ROON CORE PAIRING
+// ---------------------------------------------------------
 var roon = new RoonApi({
     extension_id:        'com.junderscoreb.pebble.remote',
     display_name:        "Pebble Roon Remote",
-    display_version:     "1.1.1",
+    display_version:     "1.2.0",
     publisher:           "J_B",
     email:               "dev@example.com",
     log_level:           "none",
@@ -34,7 +69,9 @@ var roon = new RoonApi({
         transport.subscribe_zones((response, msg) => {
             if (response == "Subscribed") {
                 zones = msg.zones.reduce((map, z) => { map[z.zone_id] = z; return map; }, {});
-                if (!current_zone_id && msg.zones.length > 0) current_zone_id = msg.zones[0].zone_id;
+                if (!current_zone_id && msg.zones.length > 0) {
+                    selectPlayingOrFirstZone();
+                }
             } else if (response == "Changed") {
                 if (msg.zones_added)   msg.zones_added.forEach(z => zones[z.zone_id] = z);
                 if (msg.zones_removed) msg.zones_removed.forEach(z => delete zones[z.zone_id]);
@@ -69,20 +106,20 @@ if (process.env.ROON_CORE_IP) {
 }
 
 // ---------------------------------------------------------
-// HELPER FUNCTIONS
+// STATUS BUILDER
 // ---------------------------------------------------------
 function getZone() {
     if (!core) return null;
     if (!current_zone_id || !zones[current_zone_id]) {
-        var keys = Object.keys(zones);
-        if (keys.length > 0) current_zone_id = keys[0];
+        selectPlayingOrFirstZone();
     }
     return zones[current_zone_id];
 }
 
 function buildStatus() {
     var z = getZone();
-    if (!z) return { zone: "Searching...", track: "No Core", artist: "", is_playing: false };
+    // Injected the reminder into the artist field here
+    if (!z) return { zone: "Searching...", track: "No Core", artist: "Is the extension enabled?", is_playing: false };
 
     var line1 = "Unknown";
     var line2 = "";
@@ -100,7 +137,6 @@ function buildStatus() {
 
         if (valid_outputs.length > 0) {
             is_fixed = false;
-            // Sum all the volumes together and divide by the number of valid outputs
             var total = valid_outputs.reduce((sum, o) => sum + (o.volume.value || 0), 0);
             vol_val = Math.round(total / valid_outputs.length);
         }
@@ -119,7 +155,14 @@ function buildStatus() {
 // ---------------------------------------------------------
 // EXPRESS API ROUTES
 // ---------------------------------------------------------
-app.get('/status', (req, res) => { res.json(buildStatus()); });
+app.get('/status', (req, res) => {
+    res.json(buildStatus());
+});
+
+app.get('/launch', (req, res) => {
+    selectPlayingOrFirstZone();
+    res.json(buildStatus());
+});
 
 app.get('/playpause', (req, res) => {
     if (core && getZone()) core.services.RoonApiTransport.control(getZone(), "playpause");
@@ -141,8 +184,6 @@ app.get('/pause_all', (req, res) => {
             staggerDelay += 50;
         });
 
-        // Wait for stagger to finish + 250ms buffer to allow Roon
-        // to update its internal state before sending the status back to Pebble
         setTimeout(() => {
             res.json(buildStatus());
         }, staggerDelay + 250);
@@ -166,7 +207,6 @@ app.get('/previous', (req, res) => {
 app.get('/vol_up', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        // Filter out endpoints with fixed volume
         var valid_outputs = z.outputs.filter(o => o.volume && o.volume.type !== 'fixed');
 
         if (valid_outputs.length === 0) {
@@ -174,11 +214,9 @@ app.get('/vol_up', (req, res) => {
         }
 
         var completed = 0;
-        // Iterate through all valid outputs in the group
         valid_outputs.forEach(output => {
             core.services.RoonApiTransport.change_volume(output, "relative_step", 1, function(error) {
                 completed++;
-                // Wait until all outputs have acknowledged the change
                 if (completed === valid_outputs.length) {
                     res.json(buildStatus());
                 }
@@ -192,7 +230,6 @@ app.get('/vol_up', (req, res) => {
 app.get('/vol_down', (req, res) => {
     var z = getZone();
     if (core && z && z.outputs && z.outputs.length > 0) {
-        // Filter out endpoints with fixed volume
         var valid_outputs = z.outputs.filter(o => o.volume && o.volume.type !== 'fixed');
 
         if (valid_outputs.length === 0) {
@@ -200,11 +237,9 @@ app.get('/vol_down', (req, res) => {
         }
 
         var completed = 0;
-        // Iterate through all valid outputs in the group
         valid_outputs.forEach(output => {
             core.services.RoonApiTransport.change_volume(output, "relative_step", -1, function(error) {
                 completed++;
-                // Wait until all outputs have acknowledged the change
                 if (completed === valid_outputs.length) {
                     res.json(buildStatus());
                 }
@@ -216,21 +251,21 @@ app.get('/vol_down', (req, res) => {
 });
 
 app.get('/next_zone', (req, res) => {
-    var keys = Object.keys(zones);
-    if (keys.length > 0) {
-        var idx = keys.indexOf(current_zone_id);
-        var nextIdx = (idx + 1) % keys.length;
-        current_zone_id = keys[nextIdx];
+    var sorted = getSortedZones();
+    if (sorted.length > 0) {
+        var idx = sorted.findIndex(z => z.zone_id === current_zone_id);
+        var nextIdx = (idx === -1) ? 0 : (idx + 1) % sorted.length;
+        current_zone_id = sorted[nextIdx].zone_id;
     }
     res.json(buildStatus());
 });
 
 app.get('/prev_zone', (req, res) => {
-    var keys = Object.keys(zones);
-    if (keys.length > 0) {
-        var idx = keys.indexOf(current_zone_id);
-        var prevIdx = (idx - 1 + keys.length) % keys.length;
-        current_zone_id = keys[prevIdx];
+    var sorted = getSortedZones();
+    if (sorted.length > 0) {
+        var idx = sorted.findIndex(z => z.zone_id === current_zone_id);
+        var prevIdx = (idx === -1) ? 0 : (idx - 1 + sorted.length) % sorted.length;
+        current_zone_id = sorted[prevIdx].zone_id;
     }
     res.json(buildStatus());
 });

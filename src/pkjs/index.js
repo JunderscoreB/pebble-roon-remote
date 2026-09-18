@@ -55,7 +55,7 @@ function sendBridgeCommand(command) {
     if (req.status === 200) {
       sendToWatch(req.responseText);
       // Fast poll instantly following a command to quickly catch state changes from the Roon API
-      if (command !== 'status') {
+      if (command !== 'status' && command !== 'launch') {
         setTimeout(fetchStatus, 350);
       }
     }
@@ -68,12 +68,18 @@ function scheduleNextFetch() {
   g_pollTimer = setTimeout(fetchStatus, 3000);
 }
 
-function fetchStatus() {
+function fetchStatus(isLaunch) {
+  var endpoint = (isLaunch === true) ? 'launch' : 'status';
   var req = new XMLHttpRequest();
-  req.open('GET', getBridgeUrl() + 'status', true);
+  req.open('GET', getBridgeUrl() + endpoint, true);
   req.onload = function() {
-    if (req.status === 200) { sendToWatch(req.responseText); scheduleNextFetch(); }
-    else { sendErrorToWatch(); scheduleNextFetch(); }
+    if (req.status === 200) {
+      sendToWatch(req.responseText);
+      scheduleNextFetch();
+    } else {
+      sendErrorToWatch();
+      scheduleNextFetch();
+    }
   };
   req.onerror = function() { sendErrorToWatch(); scheduleNextFetch(); };
   req.ontimeout = function() { sendErrorToWatch(); scheduleNextFetch(); };
@@ -130,13 +136,18 @@ function sendToWatch(responseText) {
   } catch (err) { console.log("JSON Parse Error: " + err); }
 }
 
-Pebble.addEventListener('ready', function() { fetchStatus(); });
+Pebble.addEventListener('ready', function() {
+  // Jump to the playing zone on app open
+  fetchStatus(true);
+});
 
 Pebble.addEventListener('appmessage', function(e) {
   var command = e.payload['command'] || e.payload['0'] || e.payload[0];
-  if (command === "retry_connection") { fetchStatus(); return; }
+  if (command === "retry_connection") {
+    fetchStatus(true);
+    return;
+  }
 
-  // Simply route everything direct to the bridge
   if (command === "playpause") {
     sendBridgeCommand(command);
   } else if ((command === "next" || command === "previous") && !g_isPlaying) {
@@ -182,7 +193,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
         localStorage.setItem('timeout_app', config.timeout_app || "0");
         localStorage.setItem('timeout_disc', config.timeout_disc || "0");
         localStorage.setItem('enable_touch', config.enable_touch || "1");
-        fetchStatus();
+        fetchStatus(true);
       }
     } catch(err) {}
   }
