@@ -9,6 +9,7 @@
  */
 
 #include <pebble.h>
+#include <stdlib.h> // Required for abs()
 
 #define KEY_COMMAND 0
 #define KEY_ZONE_NAME 1
@@ -92,6 +93,10 @@ static AppTimer *s_playpause_delay_timer = NULL;
 static AppTimer *s_zone_revert_timer = NULL;
 static AppTimer *s_btn_lock_timer = NULL;
 
+// Touch Hold State
+static AppTimer *s_touch_hold_timer = NULL;
+static bool s_touch_held = false;
+
 // App Timeout Timers
 static AppTimer *s_app_idle_timer = NULL;
 static AppTimer *s_disc_idle_timer = NULL;
@@ -104,6 +109,10 @@ static bool s_btns_locked = false;
 static bool s_is_playing = false;
 static bool s_is_fixed = false;
 static bool s_app_in_focus = true;
+
+// Touch Tracking
+static int16_t s_touch_start_x = -1;
+static int16_t s_touch_start_y = -1;
 
 // Buffers
 static char s_track_buf[128] = "";
@@ -315,7 +324,6 @@ static void update_ui() {
 
   safe_set_text(s_track_layer, s_track_buf);
 
-  // FIX: Restore artist layer (was missing) and hardcode the extension:wq reminder natively
   if (strcmp(s_track_buf, "No Core") == 0) {
     safe_set_text(s_artist_layer, "Is the extension enabled?");
   } else {
@@ -531,8 +539,6 @@ static void select_double_click_handler(ClickRecognizerRef recognizer, void *con
   safe_set_text(s_track_layer, "Pausing All...");
   safe_set_text(s_artist_layer, "");
 
-  // FIX: Forcefully wipe the buffers so the watch is guaranteed to redraw
-  // the text when the bridge responds with the next update.
   s_track_buf[0] = '\0';
   s_artist_buf[0] = '\0';
 
@@ -552,28 +558,106 @@ static void click_config_provider(void *context) {
   window_multi_click_subscribe(BUTTON_ID_SELECT, 2, 2, 300, true, select_double_click_handler);
 }
 
-#ifdef PBL_TOUCH
+// --- TOUCH ENGINE DISPATCHER ---
+static void touch_hold_cb(void *data) {
+  s_touch_hold_timer = NULL;
+  s_touch_held = true;
+
+  vibes_long_pulse();
+  stop_marquee();
+  safe_set_text(s_track_layer, "Pausing All...");
+  safe_set_text(s_artist_layer, "");
+
+  s_track_buf[0] = '\0';
+  s_artist_buf[0] = '\0';
+
+  send_command("pause_all");
+}
+
 static void touch_handler(const TouchEvent *event, void *context) {
   mark_user_interaction();
   if (s_mode == MODE_ERROR || s_btns_locked || !s_enable_touch || !s_app_in_focus) return;
 
   if (event->type == TouchEvent_Touchdown) {
-    Layer *window_layer = window_get_root_layer(s_window);
-    GRect bounds = layer_get_bounds(window_layer);
-    GRect status_target = GRect(0, bounds.size.h / 2, bounds.size.w, bounds.size.h / 2);
-    GPoint tap_loc = GPoint(event->x, event->y);
-    if (grect_contains_point(&status_target, &tap_loc)) {
-      if (s_mode == MODE_TRACK) {
-        trigger_optimistic_playpause();
-      } else if (s_mode == MODE_ZONE) {
-        reset_zone_timer();
+    s_touch_start_x = event->x;
+    s_touch_start_y = event->y;
+    s_touch_held = false;
+
+    if (s_touch_hold_timer) app_timer_cancel(s_touch_hold_timer);
+
+    // Initiate 600ms hold timer
+    s_touch_hold_timer = app_timer_register(600, touch_hold_cb, NULL);
+  }
+  else if (event->type == TouchEvent_PositionUpdate) {
+    // If user shifts finger outside 15px deadzone, they are swiping: abort the hold timer
+    if (s_touch_hold_timer && s_touch_start_x != -1) {
+      int16_t dx = abs(event->x - s_touch_start_x);
+      int16_t dy = abs(event->y - s_touch_start_y);
+      if (dx > 15 || dy > 15) {
+        app_timer_cancel(s_touch_hold_timer);
+        s_touch_hold_timer = NULL;
       }
     }
   }
-}
-#endif
+  else if (event->type == TouchEvent_Liftoff) {
+    // Cancel timer as finger has left the screen
+    if (s_touch_hold_timer) {
+      app_timer_cancel(s_touch_hold_timer);
+      s_touch_hold_timer = NULL;
+    }
 
-#ifndef PBL_TOUCH
+    // If hold action already triggered, discard this liftoff
+    if (s_touch_held) {
+      s_touch_start_x = -1;
+      s_touch_start_y = -1;
+      return;
+    }
+
+    if (s_touch_start_x != -1 && s_touch_start_y != -1) {
+      int16_t delta_x = event->x - s_touch_start_x;
+      int16_t delta_y = event->y - s_touch_start_y;
+
+      // Horizontal Swipe Detection
+      if (abs(delta_x) > 30 && abs(delta_x) > abs(delta_y)) {
+        if (s_mode == MODE_TRACK) {
+          vibes_short_pulse();
+          if (delta_x > 0) {
+            send_command("previous");
+          } else {
+            send_command("next");
+          }
+          lock_buttons_temporarily(300);
+        }
+      }
+      // Vertical Swipe Detection
+      else if (abs(delta_y) > 30 && abs(delta_y) > abs(delta_x)) {
+        vibes_short_pulse();
+        reset_zone_timer();
+        stop_marquee();
+
+        if (delta_y > 0) {
+          send_command("prev_zone");
+        } else {
+          send_command("next_zone");
+        }
+        lock_buttons_temporarily(300);
+      }
+      // Instant Tap Detection
+      else {
+        if (s_mode == MODE_TRACK) {
+          trigger_optimistic_playpause();
+        } else if (s_mode == MODE_ZONE) {
+          reset_zone_timer();
+        }
+      }
+    }
+
+    // Reset tracking sequence memory
+    s_touch_start_x = -1;
+    s_touch_start_y = -1;
+  }
+}
+
 static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   mark_user_interaction();
   if (s_mode == MODE_ERROR || s_btns_locked || !s_enable_touch || !s_app_in_focus) return;
@@ -586,7 +670,6 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
     }
   }
 }
-#endif
 
 static void status_layer_update_proc(Layer *layer, GContext *ctx) {
   if (!s_window_loaded || s_mode == MODE_ERROR) return;
@@ -827,6 +910,7 @@ static void window_unload(Window *window) {
   if (s_app_idle_timer) app_timer_cancel(s_app_idle_timer);
   if (s_disc_idle_timer) app_timer_cancel(s_disc_idle_timer);
   if (s_play_ignore_timer) app_timer_cancel(s_play_ignore_timer);
+  if (s_touch_hold_timer) app_timer_cancel(s_touch_hold_timer);
 
   stop_marquee();
   cancel_zone_timer();
@@ -861,11 +945,11 @@ static void init(void) {
     .did_focus = focus_handler
   });
 
-  #ifdef PBL_TOUCH
-  if (touch_service_is_enabled()) touch_service_subscribe(touch_handler, NULL);
-  #else
-  accel_tap_service_subscribe(accel_tap_handler);
-  #endif
+  if (touch_service_is_enabled()) {
+    touch_service_subscribe(touch_handler, NULL);
+  } else {
+    accel_tap_service_subscribe(accel_tap_handler);
+  }
 
   connection_service_subscribe((ConnectionHandlers) { .pebble_app_connection_handler = bluetooth_callback });
 
@@ -883,11 +967,11 @@ static void init(void) {
 static void deinit(void) {
   app_focus_service_unsubscribe();
 
-  #ifdef PBL_TOUCH
-  touch_service_unsubscribe();
-  #else
-  accel_tap_service_unsubscribe();
-  #endif
+  if (touch_service_is_enabled()) {
+    touch_service_unsubscribe();
+  } else {
+    accel_tap_service_unsubscribe();
+  }
 
   connection_service_unsubscribe();
   window_destroy(s_window);

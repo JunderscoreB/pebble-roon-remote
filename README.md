@@ -6,14 +6,14 @@ Control your Roon music endpoints directly from your wrist. This app works with 
 
 ### ⌚ Features
 * **Customizable Track/Volume Controls:** Map your Up/Down buttons to instantly control volume (with a seamless quick-flash UI overlay) or change tracks.
-* **Touch Support:** Capacitive touch support for Pebble Time 2 (Emery platform) and Pebble Round 2—simply tap the screen to Play/Pause. Includes a safety toggle to disable touch.
+* **Advanced Touch Support:** Capacitive touch support for Pebble Time 2 (Emery platform) and Pebble Round 2. Tap anywhere to Play/Pause, touch and hold to Pause All, or use multi-directional swipes to change tracks and zones. Includes a safety toggle to disable touch.
 * **Zone Selection:** View and cycle through active Roon zones directly from the watch with rapid, debounced network updates.
 * **Live Metadata:** See Artist, Track, and Zone Name in real-time.
 * **UI Customization:** Choose your preferred font size and toggle marquee scrolling for long track names.
-* **Smart Timeouts:** Preserve battery with customizable idle and disconnect timeouts that automatically exit the app when inactive.
+* **Smart Timeouts:** Preserve battery with customizable idle and disconnect timeouts (now supporting 1-minute intervals) that automatically exit the app when inactive.
 * **Low Latency:** Optimized for instant feedback using the PebbleDict API and optimistic UI rendering for Play/Pause and Volume controls.
 
-### 🚀 [Download Latest Version (v1.0.1)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
+### 🚀 [Download Latest Version (v1.2.1)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
 ### 💬 [Join the Roon Community Discussion](https://community.roonlabs.com/t/pebble-smartwatch-app-and-corresponding-roon-extension/313874)
 
 ---
@@ -51,14 +51,21 @@ You can install the app directly from the Rebble App Store or manually sideload 
 
 ### 🕹️ Controls
 
-* **Tap Screen (Touch devices):** Play / Pause.
+**Touchscreen Gestures (Pebble Time 2 / Round 2):**
+* **Tap Screen:** Play / Pause.
+* **Touch & Hold (600ms):** Pause All Zones.
+* **Swipe Left / Right:** Previous / Next Track.
+* **Swipe Up / Down:** Previous / Next Zone.
+
+**Hardware Buttons:**
 * **Select (Short Press):** Toggle between **Track Mode** and **Zone Mode**.
 * **Select (Long Press):** Play / Pause.
+* **Select (Double Click):** Pause All Zones.
 * **Up / Down (Short Press):** Adjust Volume (displays a dedicated visual overlay).
 * **Up / Down (Long Press):** Previous / Next Track.
 * **Up / Down (Zone Mode):** Cycle through available Roon Zones.
 
-> **Pro Tip for App Timeouts:** For the best experience, assign Roon Remote to a **Quick Launch** button on your watch (Watch Settings -> Quick Launch). When the inactivity timeout triggers, the app will gracefully exit directly to your watchface instead of the Pebble app menu!
+> **Pro Tip for App Timeouts:** For the best experience, assign Roon Remote to a **Quick Launch** button or button-combo on your watch (Watch Settings -> Quick Launch). When the inactivity timeout triggers, the app will gracefully exit directly to your watchface instead of the Pebble app menu!
 
 ---
 
