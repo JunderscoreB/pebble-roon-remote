@@ -24,6 +24,7 @@
 #define KEY_TIMEOUT_APP 10
 #define KEY_TIMEOUT_DISC 11
 #define KEY_ENABLE_TOUCH 12
+#define KEY_IS_CONFIGURING 13
 
 #define PERSIST_KEY_FONT 0
 #define PERSIST_KEY_SCROLL 1
@@ -109,6 +110,7 @@ static bool s_btns_locked = false;
 static bool s_is_playing = false;
 static bool s_is_fixed = false;
 static bool s_app_in_focus = true;
+static bool s_is_configuring = false;
 
 // Touch Tracking
 static int16_t s_touch_start_x = -1;
@@ -138,7 +140,7 @@ static void exit_app_cb(void *data) {
 
 static void mark_user_interaction() {
   if (s_app_idle_timer) { app_timer_cancel(s_app_idle_timer); s_app_idle_timer = NULL; }
-  if (s_timeout_app_min > 0 && s_mode != MODE_ERROR) {
+  if (s_timeout_app_min > 0 && s_mode != MODE_ERROR && !s_is_configuring) {
     s_app_idle_timer = app_timer_register(s_timeout_app_min * 60000, exit_app_cb, NULL);
   }
 }
@@ -146,7 +148,7 @@ static void mark_user_interaction() {
 static void start_disconnect_timer() {
   if (s_app_idle_timer) { app_timer_cancel(s_app_idle_timer); s_app_idle_timer = NULL; }
   if (s_disc_idle_timer) { app_timer_cancel(s_disc_idle_timer); s_disc_idle_timer = NULL; }
-  if (s_timeout_disc_min > 0) {
+  if (s_timeout_disc_min > 0 && !s_is_configuring) {
     s_disc_idle_timer = app_timer_register(s_timeout_disc_min * 60000, exit_app_cb, NULL);
   }
 }
@@ -719,24 +721,24 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   if (!s_window_loaded) return;
   Tuple *t;
 
-  if ((t = dict_find(iterator, KEY_ERROR))) {
-    if (get_tuple_int(t) == 1) {
-      if (s_mode != MODE_ERROR) {
-        s_mode = MODE_ERROR;
-        start_disconnect_timer();
-        update_ui();
-      }
-      return;
-    } else {
-      if (s_mode == MODE_ERROR) {
-        s_mode = MODE_TRACK;
+  // 1. Process all configuration settings first to ensure UI updates aren't blocked by network errors
+
+  if ((t = dict_find(iterator, KEY_IS_CONFIGURING))) {
+    bool is_config = (get_tuple_int(t) == 1);
+    if (s_is_configuring != is_config) {
+      s_is_configuring = is_config;
+      if (s_is_configuring) {
+        if (s_app_idle_timer) { app_timer_cancel(s_app_idle_timer); s_app_idle_timer = NULL; }
         if (s_disc_idle_timer) { app_timer_cancel(s_disc_idle_timer); s_disc_idle_timer = NULL; }
-        mark_user_interaction();
-        update_ui();
+      } else {
+        if (s_mode == MODE_ERROR) {
+          start_disconnect_timer();
+        } else {
+          mark_user_interaction();
+        }
       }
     }
   }
-  if (s_mode == MODE_ERROR) return;
 
   if ((t = dict_find(iterator, KEY_FONT_SIZE))) {
     int requested_size = get_tuple_int(t);
@@ -745,7 +747,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
       persist_write_int(PERSIST_KEY_FONT, s_font_size);
       apply_fonts();
       start_marquee();
-      if (s_status_layer) layer_mark_dirty(s_status_layer);
+      update_ui();
     }
   }
 
@@ -784,6 +786,28 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     }
   }
 
+  // 2. Now process the error check
+  if ((t = dict_find(iterator, KEY_ERROR))) {
+    if (get_tuple_int(t) == 1) {
+      if (s_mode != MODE_ERROR) {
+        s_mode = MODE_ERROR;
+        start_disconnect_timer();
+        update_ui();
+      }
+      return;
+    } else {
+      if (s_mode == MODE_ERROR) {
+        s_mode = MODE_TRACK;
+        if (s_disc_idle_timer) { app_timer_cancel(s_disc_idle_timer); s_disc_idle_timer = NULL; }
+        mark_user_interaction();
+        update_ui();
+      }
+    }
+  }
+
+  if (s_mode == MODE_ERROR) return;
+
+  // 3. Process track and playback data
   if ((t = dict_find(iterator, KEY_ZONE_NAME))) {
     snprintf(s_zone_buf, sizeof(s_zone_buf), "%s", t->value->cstring);
     if (s_zone_layer) safe_set_text(s_zone_layer, s_zone_buf);
@@ -959,7 +983,8 @@ static void init(void) {
   app_message_register_outbox_sent(outbox_sent_handler);
   app_message_register_outbox_failed(outbox_failed_handler);
 
-  app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
+  // Use explicit allocation bounds to prevent OOM failure on aplite
+  app_message_open(1024, 256);
 
   window_stack_push(s_window, true);
 }
