@@ -56,9 +56,11 @@ dkms.conf
 
 # Ignore developer config overrides
 dev_config.json
+node_modules/
 .lock-waf*
 
 # Ignore Pebble build folders
 build/
+ignore/
 .venv/
 ss/
