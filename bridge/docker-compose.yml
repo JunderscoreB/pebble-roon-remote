@@ -2,6 +2,7 @@ services:
   pebble-roon-bridge:
     build: .
     container_name: pebble-roon-bridge
+    network_mode: "host"
     ports:
       - "3000:3000"
     restart: unless-stopped
