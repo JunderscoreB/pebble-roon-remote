@@ -36,6 +36,11 @@ function selectPlayingOrFirstZone() {
         return;
     }
 
+    // Prevent the bridge from hijacking the remote if the current zone is valid but paused
+    if (current_zone_id && zones[current_zone_id]) {
+        return;
+    }
+
     // Filter all zones that are currently actively playing
     var playingZones = sorted.filter(z => z.state === "playing");
 
@@ -43,7 +48,7 @@ function selectPlayingOrFirstZone() {
         // Default to the first playing zone in alphabetical order
         current_zone_id = playingZones[0].zone_id;
         console.log("-> Jumped to active playing zone: " + playingZones[0].display_name);
-    } else if (!current_zone_id || !zones[current_zone_id]) {
+    } else {
         // If nothing is playing and no zone is selected, choose the first alphabetically
         current_zone_id = sorted[0].zone_id;
         console.log("-> Defaulted to first alphabetical zone: " + sorted[0].display_name);
@@ -73,9 +78,39 @@ var roon = new RoonApi({
                     selectPlayingOrFirstZone();
                 }
             } else if (response == "Changed") {
-                if (msg.zones_added)   msg.zones_added.forEach(z => zones[z.zone_id] = z);
-                if (msg.zones_removed) msg.zones_removed.forEach(z => delete zones[z.zone_id]);
-                if (msg.zones_changed) msg.zones_changed.forEach(z => zones[z.zone_id] = z);
+                if (msg.zones_added) {
+                    msg.zones_added.forEach(z => zones[z.zone_id] = z);
+                }
+                if (msg.zones_removed) {
+                    msg.zones_removed.forEach(z => delete zones[z.zone_id]);
+                }
+                if (msg.zones_changed) {
+                    msg.zones_changed.forEach(z => {
+                        if (zones[z.zone_id]) {
+                            // Deep merge partial updates to prevent destroying states and outputs
+                            for (var prop in z) {
+                                zones[z.zone_id][prop] = z[prop];
+                            }
+                        } else {
+                            zones[z.zone_id] = z;
+                        }
+                    });
+                }
+                if (msg.outputs_changed) {
+                    msg.outputs_changed.forEach(o => {
+                        for (var zid in zones) {
+                            var zone = zones[zid];
+                            if (zone.outputs) {
+                                var idx = zone.outputs.findIndex(out => out.output_id === o.output_id);
+                                if (idx !== -1) {
+                                    for (var prop in o) {
+                                        zone.outputs[idx][prop] = o[prop];
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
             }
         });
     },
@@ -118,7 +153,6 @@ function getZone() {
 
 function buildStatus() {
     var z = getZone();
-    // Injected the reminder into the artist field here
     if (!z) return { zone: "Searching...", track: "No Core", artist: "Is the extension enabled?", is_playing: false };
 
     var line1 = "Unknown";
