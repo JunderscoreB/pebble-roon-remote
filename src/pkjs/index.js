@@ -1,17 +1,6 @@
-/*
- * Pebble Roon Remote
- * Copyright (c) 2026 J_B
- *
- * Released under the MIT License.
- *
- * AI Disclosure: Portions of this file were generated and optimized with the assistance of generative AI.
- * Co-Authored-By: Google Gemini <noreply@google.com>
- */
-
 var Clay = require('@rebble/clay');
 var clayConfig = require('./config.js');
-
-var customClayFile = null;
+var customClayFile = require('./custom-clay.js');
 var devConfig = {};
 
 var customClay = new Clay(clayConfig, customClayFile, { autoHandleEvents: false });
@@ -24,18 +13,24 @@ var g_messageQueue = [];
 var g_isSendingMessage = false;
 var g_pollTimer = null;
 var g_isConfiguring = false;
-var g_lastCommandTime = 0;
+var g_lastCommandTimes = {};
+var g_retryCount = 0;
+
+var g_lastData = {};
+var g_errorCount = 0;
+var g_isWatchIdle = false;
 
 function getBridgeUrl() {
   var ip = localStorage.getItem('bridge_ip') || DEFAULT_IP;
   var port = localStorage.getItem('bridge_port') || DEFAULT_PORT;
-
   ip = ip.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  port = port.trim();
-  return "http://" + ip + ":" + port + "/";
+  return "http://" + ip + ":" + port.trim() + "/";
 }
 
 function sendAppMessageQueue(dictionary) {
+  if (g_messageQueue.length > 1) {
+    g_messageQueue.length = 1;
+  }
   g_messageQueue.push(dictionary);
   pumpQueue();
 }
@@ -49,10 +44,16 @@ function pumpQueue() {
                         function(e) {
                           g_messageQueue.shift();
                           g_isSendingMessage = false;
+                          g_retryCount = 0;
                           pumpQueue();
                         },
                         function(e) {
                           g_isSendingMessage = false;
+                          g_retryCount++;
+                          if (g_retryCount >= 3) {
+                            g_messageQueue.shift();
+                            g_retryCount = 0;
+                          }
                           setTimeout(pumpQueue, 100);
                         }
   );
@@ -61,21 +62,13 @@ function pumpQueue() {
 function sendBridgeCommand(command) {
   var req = new XMLHttpRequest();
   var url = getBridgeUrl() + command;
-  console.log("[Roon Remote] TX Command: " + url);
 
   req.open('GET', url, true);
   req.setRequestHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  req.setRequestHeader("Pragma", "no-cache");
-  req.setRequestHeader("Expires", "0");
-
   req.onload = function() {
     if (req.status === 200) {
       sendToWatch(req.responseText);
-      if (command !== 'status' && command !== 'launch') {
-        setTimeout(fetchStatus, 350);
-      }
-    } else {
-      console.log("[Roon Remote] HTTP Error " + req.status + " on " + command);
+      if (command !== 'status' && command !== 'launch') setTimeout(fetchStatus, 350);
     }
   };
   req.send(null);
@@ -83,38 +76,34 @@ function sendBridgeCommand(command) {
 
 function scheduleNextFetch() {
   if (g_pollTimer) clearTimeout(g_pollTimer);
-  // Adaptive polling: 3s if active, 30s if paused to conserve watch battery
-  var pollInterval = g_isPlaying ? 3000 : 30000;
+
+  var pollInterval = 30000;
+
+  if (g_errorCount > 0) {
+    // Exponential backoff up to 60 seconds
+    pollInterval = Math.min(60000, 3000 * Math.pow(2, g_errorCount));
+  } else if (g_isPlaying) {
+    pollInterval = g_isWatchIdle ? 10000 : 3000;
+  }
+
   g_pollTimer = setTimeout(fetchStatus, pollInterval);
 }
 
 function fetchStatus(isLaunch) {
   var endpoint = (isLaunch === true) ? 'launch' : 'status';
   var req = new XMLHttpRequest();
-  var url = getBridgeUrl() + endpoint;
-
-  req.open('GET', url, true);
+  req.open('GET', getBridgeUrl() + endpoint, true);
   req.setRequestHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  req.setRequestHeader("Pragma", "no-cache");
-  req.setRequestHeader("Expires", "0");
 
   req.onload = function() {
     if (req.status === 200) {
       sendToWatch(req.responseText);
-      scheduleNextFetch();
     } else {
-      console.log("[Roon Remote] HTTP Error " + req.status + " on " + endpoint);
       sendErrorToWatch();
-      scheduleNextFetch();
     }
-  };
-  req.onerror = function() {
-    console.log("[Roon Remote] Network connection failed on " + endpoint);
-    sendErrorToWatch();
     scheduleNextFetch();
   };
-  req.ontimeout = function() {
-    console.log("[Roon Remote] Request timed out on " + endpoint);
+  req.onerror = req.ontimeout = function() {
     sendErrorToWatch();
     scheduleNextFetch();
   };
@@ -125,44 +114,47 @@ function fetchStatus(isLaunch) {
 function getBasePayload() {
   var rawFont = localStorage.getItem('font_size');
   var savedFont = (rawFont === 'large' || rawFont === '2') ? 2 : (rawFont === 'small' || rawFont === '0') ? 0 : 1;
-
-  var rawScroll = localStorage.getItem('scroll_text');
-  var isScrollEnabled = (rawScroll === 'true' || rawScroll === '1' || rawScroll === true) ? 1 : 0;
-
+  var scrollMode = parseInt(localStorage.getItem('scroll_text'), 10) || 0;
   var rawTouch = localStorage.getItem('enable_touch');
-  var isTouchEnabled = 1;
-  if (rawTouch === 'false' || rawTouch === '0' || rawTouch === false || rawTouch === "") {
-    isTouchEnabled = 0;
-  }
-
+  var isTouchEnabled = (rawTouch === 'false' || rawTouch === '0' || rawTouch === false || rawTouch === "") ? 0 : 1;
   var rawQuiet = localStorage.getItem('respect_quiet_time');
-  var isQuietEnabled = 1;
-  if (rawQuiet === 'false' || rawQuiet === '0' || rawQuiet === false || rawQuiet === "") {
-    isQuietEnabled = 0;
-  }
-
+  var isQuietEnabled = (rawQuiet === 'false' || rawQuiet === '0' || rawQuiet === false || rawQuiet === "") ? 0 : 1;
+  var rawWf = localStorage.getItem('enable_watchface');
+  var isWfEnabled = (rawWf === 'true' || rawWf === '1' || rawWf === true) ? 1 : 0;
+  var rawAccel = localStorage.getItem('enable_accel_playpause');
+  var isAccelEnabled = (rawAccel === 'false' || rawAccel === '0' || rawAccel === false) ? 0 : 1;
   var rawTheme = localStorage.getItem('theme');
   var isLightMode = (rawTheme === 'true' || rawTheme === '1' || rawTheme === true) ? 1 : 0;
+  var rawTimeoutWf = localStorage.getItem('timeout_to_app_wf');
+  var isTimeoutWf = (rawTimeoutWf === 'true' || rawTimeoutWf === '1' || rawTimeoutWf === true) ? 1 : 0;
+  var rawSuppressWf = localStorage.getItem('suppress_gesture_quiet');
+  var isSuppressWf = (rawSuppressWf === 'true' || rawSuppressWf === '1' || rawSuppressWf === true) ? 1 : 0;
+  var rawFlickVibes = localStorage.getItem('enable_flick_vibes');
+  var isFlickVibes = (rawFlickVibes === 'false' || rawFlickVibes === '0' || rawFlickVibes === false) ? 0 : 1;
 
   var timeApp = parseInt(localStorage.getItem('timeout_app') || '0', 10);
   var timeDisc = parseInt(localStorage.getItem('timeout_disc') || '0', 10);
 
   return {
     'font_size': savedFont,
-    'scroll_text': isScrollEnabled,
+    'scroll_text': scrollMode,
     'timeout_app': timeApp,
     'timeout_disc': timeDisc,
     'enable_touch': isTouchEnabled,
     'respect_quiet_time': isQuietEnabled,
+    'enable_watchface': isWfEnabled,
+    'enable_accel_playpause': isAccelEnabled,
+    'timeout_to_app_wf': isTimeoutWf,
+    'suppress_gesture_quiet': isSuppressWf,
+    'enable_flick_vibes': isFlickVibes,
     'theme': isLightMode,
     'is_configuring': g_isConfiguring ? 1 : 0
   };
 }
 
 function sendErrorToWatch() {
-  var payload = getBasePayload();
-  payload['error'] = 1;
-  sendAppMessageQueue(payload);
+  g_errorCount++;
+  sendAppMessageQueue({ 'error': 1 });
 }
 
 function sendConfigToWatch() {
@@ -174,7 +166,7 @@ function sendConfigToWatch() {
 function sendToWatch(responseText) {
   try {
     var response = JSON.parse(responseText);
-    var payload = getBasePayload();
+    g_errorCount = 0;
 
     if (response.is_playing !== undefined) g_isPlaying = response.is_playing;
 
@@ -185,48 +177,65 @@ function sendToWatch(responseText) {
       if (typeof response.volume === 'object') {
         safeVolume = parseInt(response.volume.value, 10);
         if (response.volume.type === 'fixed') isFixed = true;
-      } else {
-        safeVolume = parseInt(response.volume, 10);
-      }
+      } else { safeVolume = parseInt(response.volume, 10); }
     } else if (response.volume_value !== undefined && response.volume_value !== null) {
       safeVolume = parseInt(response.volume_value, 10);
     } else if (response.level !== undefined && response.level !== null) {
       safeVolume = parseInt(response.level, 10);
     }
-
     if (isNaN(safeVolume)) safeVolume = -1;
-    if (safeVolume !== -1 && safeVolume !== null) isFixed = false;
 
-    payload['zone_name'] = response.zone || "Unknown";
-    payload['track'] = response.track || "";
-    payload['artist'] = response.artist || "";
-    payload['is_playing'] = response.is_playing ? 1 : 0;
-    payload['volume_val'] = safeVolume;
-    payload['is_fixed'] = isFixed ? 1 : 0;
-    payload['error'] = 0;
+    var newData = {
+      zone_name: response.zone || "Unknown",
+      track: response.track || "",
+      artist: response.artist || "",
+      is_playing: response.is_playing ? 1 : 0,
+      volume_val: safeVolume,
+      is_fixed: isFixed ? 1 : 0
+    };
 
-    sendAppMessageQueue(payload);
-  } catch (err) { console.log("[Roon Remote] JSON Parse Error: " + err); }
+    var changed = false;
+    var payload = {};
+
+    for (var key in newData) {
+      if (newData[key] !== g_lastData[key]) {
+        changed = true;
+        payload[key] = newData[key];
+        g_lastData[key] = newData[key];
+      }
+    }
+
+    if (changed) {
+      payload['error'] = 0;
+      sendAppMessageQueue(payload);
+    }
+  } catch (err) { console.log("[Roon Remote] JSON Parse Error"); }
 }
 
 Pebble.addEventListener('ready', function() {
+  sendConfigToWatch();
   fetchStatus(true);
 });
 
 Pebble.addEventListener('appmessage', function(e) {
   var command = e.payload['command'] || e.payload['KEY_COMMAND'] || e.payload['0'] || e.payload[0];
 
-  if (command === "retry_connection" || command === "status") {
-    fetchStatus(true);
-    return;
+  if (command === "idle_true") { g_isWatchIdle = true; scheduleNextFetch(); return; }
+  if (command === "idle_false") { g_isWatchIdle = false; scheduleNextFetch(); return; }
+
+  if (command === "retry_connection") {
+    g_errorCount = 0;
+    return fetchStatus(false);
   }
+  if (command === "status") return fetchStatus(false);
 
   var now = Date.now();
-  if ((command === "next" || command === "previous" || command === "playpause" || command === "next_zone" || command === "prev_zone") && (now - g_lastCommandTime < 500)) {
-    console.log("[Roon Remote] Dropping debounced command: " + command);
+  var lastTime = g_lastCommandTimes[command] || 0;
+
+  if ((command === "next" || command === "previous" || command === "playpause" || command === "next_zone" || command === "prev_zone") && (now - lastTime < 500)) {
     return;
   }
-  g_lastCommandTime = now;
+  g_lastCommandTimes[command] = now;
 
   if (command === "playpause") {
     sendBridgeCommand(command);
@@ -253,7 +262,6 @@ Pebble.addEventListener('webviewclosed', function(e) {
 
   try {
     customClay.getSettings(e.response, false);
-
     var responseDict = JSON.parse(decodeURIComponent(e.response));
 
     function extractVal(key) {
@@ -266,30 +274,13 @@ Pebble.addEventListener('webviewclosed', function(e) {
       return null;
     }
 
-    var ip = extractVal('bridge_ip') || extractVal('ip');
-    var port = extractVal('bridge_port') || extractVal('port');
-    var font_size = extractVal('font_size');
-    var scroll_text = extractVal('scroll_text');
-    var timeout_app = extractVal('timeout_app');
-    var timeout_disc = extractVal('timeout_disc');
-    var enable_touch = extractVal('enable_touch');
-    var respect_quiet_time = extractVal('respect_quiet_time');
-    var theme = extractVal('theme');
+    var keys = ['bridge_ip', 'bridge_port', 'font_size', 'scroll_text', 'timeout_app', 'timeout_disc', 'enable_touch', 'respect_quiet_time', 'enable_watchface', 'enable_accel_playpause', 'theme', 'timeout_to_app_wf', 'suppress_gesture_quiet', 'enable_flick_vibes'];
+    keys.forEach(function(k) {
+      var val = extractVal(k);
+      if (val !== null) localStorage.setItem(k, val);
+    });
 
-    if (ip) localStorage.setItem('bridge_ip', ip);
-    if (port) localStorage.setItem('bridge_port', port);
-    if (font_size) localStorage.setItem('font_size', font_size);
-    if (scroll_text !== null) localStorage.setItem('scroll_text', scroll_text);
-    if (timeout_app) localStorage.setItem('timeout_app', timeout_app);
-    if (timeout_disc) localStorage.setItem('timeout_disc', timeout_disc);
-    if (enable_touch !== null) localStorage.setItem('enable_touch', enable_touch);
-    if (respect_quiet_time !== null) localStorage.setItem('respect_quiet_time', respect_quiet_time);
-    if (theme !== null) localStorage.setItem('theme', theme);
-
-    sendConfigToWatch();
-    fetchStatus(true);
-
-  } catch(err) {
-    console.log("[Roon Remote] Error parsing settings: " + err);
-  }
+      sendConfigToWatch();
+      fetchStatus(true);
+  } catch(err) { console.log("[Roon Remote] Error parsing settings: " + err); }
 });

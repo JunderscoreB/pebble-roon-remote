@@ -1,7 +1,7 @@
 {
   "name": "pebble-roon-remote",
   "author": "J_B",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "keywords": [
     "pebble-app"
   ],
@@ -41,7 +41,13 @@
       "timeout_disc": 11,
       "enable_touch": 12,
       "is_configuring": 13,
-      "theme": 14
+      "theme": 14,
+      "enable_watchface": 15,
+      "respect_quiet_time": 16,
+      "enable_accel_playpause": 17,
+      "timeout_to_app_wf": 18,
+      "suppress_gesture_quiet": 19,
+      "enable_flick_vibes": 20
     },
     "resources": {
       "media": [
@@ -65,24 +71,22 @@
           "name": "MENU_ICON",
           "file": "menu_icon.png",
           "menuIcon": true
+        },
+        {
+          "type": "font",
+          "name": "FONT_COMFORTAA_BOLD_42",
+          "file": "Comfortaa-Bold.ttf",
+          "compatibility": "2.7",
+          "characterRegex": "[0-9: aApmPM]"
         }
       ]
     }
   },
-  "description": "![Banner](https://roon-community-uploads.s3.amazonaws.com/original/3X/1/8/18a68b9c52c9cd1d4eecbc934e78ec0501a325d6.jpeg)",
+  "description": "Roon Remote for PebbleOS",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/JunderscoreB/pebble-roon-remote.git"
-  },
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/JunderscoreB/pebble-roon-remote/issues"
-  },
-  "homepage": "https://github.com/JunderscoreB/pebble-roon-remote#readme",
   "dependencies": {
     "@rebble/clay": "^1.0.3"
   }

@@ -1,165 +1,55 @@
 module.exports = function(minified) {
     var clayConfig = this;
 
-    function toggleScheduleSettings() {
-        // Determine visibility based strictly on the Schedule Mode, ignoring the Timeline toggle
-        var modeItem = clayConfig.getItemByMessageKey('ScheduleMode');
-        var mode = modeItem ? modeItem.get() : "0";
-        var specHour = clayConfig.getItemByMessageKey('SpecificHour');
-        var specMinute = clayConfig.getItemByMessageKey('SpecificMinute');
-        var winStart = clayConfig.getItemByMessageKey('WindowStartHour');
-        var winEnd = clayConfig.getItemByMessageKey('WindowEndHour');
-        var jokesPerHour = clayConfig.getItemByMessageKey('JokesPerHour');
+    function toggleHardwareSettings() {
+        var platform = 'aplite';
+        if (clayConfig.meta && clayConfig.meta.activeWatchInfo && clayConfig.meta.activeWatchInfo.platform) {
+            platform = clayConfig.meta.activeWatchInfo.platform;
+        }
 
-        if (mode === "0") {
-            if (specHour) specHour.show();
-            if (specMinute) specMinute.show();
-            if (winStart) winStart.hide();
-            if (winEnd) winEnd.hide();
-            if (jokesPerHour) jokesPerHour.hide();
-        } else {
-            if (specHour) specHour.hide();
-            if (specMinute) specMinute.hide();
-            if (winStart) winStart.show();
-            if (winEnd) winEnd.show();
-            if (jokesPerHour) jokesPerHour.show();
+        var isTouchCapable = (platform === 'emery' || platform === 'gabbro');
+
+        var touchItem = clayConfig.getItemByMessageKey('enable_touch');
+        var accelPlaypauseItem = clayConfig.getItemByMessageKey('enable_accel_playpause');
+
+        if (touchItem) {
+            if (isTouchCapable) touchItem.show();
+            else touchItem.hide();
+        }
+
+        if (accelPlaypauseItem) {
+            if (!isTouchCapable) accelPlaypauseItem.show();
+            else accelPlaypauseItem.hide();
         }
     }
 
-    function setupAlertOptions() {
-        var platform = clayConfig.meta.activeWatchInfo ? clayConfig.meta.activeWatchInfo.platform : 'aplite';
-        var alertStyleItem = clayConfig.getItemByMessageKey('AlertStyle');
+    function toggleWatchfaceSettings() {
+        var wfToggle = clayConfig.getItemByMessageKey('enable_watchface');
+        var suppressQuiet = clayConfig.getItemByMessageKey('suppress_gesture_quiet');
+        var timeoutWf = clayConfig.getItemByMessageKey('timeout_to_app_wf');
+        var respectQuiet = clayConfig.getItemByMessageKey('respect_quiet_time');
 
-        var selectEl = alertStyleItem.$element && alertStyleItem.$element[0]
-        ? alertStyleItem.$element[0].querySelector('select')
-        : document.querySelector('select[name="AlertStyle"]');
-
-        if (selectEl && platform !== 'emery') {
-            var soundOnlyOpt = selectEl.querySelector('option[value="1"]');
-            var vibeSoundOpt = selectEl.querySelector('option[value="2"]');
-            var vibeOnlyOpt = selectEl.querySelector('option[value="0"]');
-
-            if (soundOnlyOpt && soundOnlyOpt.parentNode) soundOnlyOpt.parentNode.removeChild(soundOnlyOpt);
-            if (vibeSoundOpt && vibeSoundOpt.parentNode) vibeSoundOpt.parentNode.removeChild(vibeSoundOpt);
-            if (vibeOnlyOpt) vibeOnlyOpt.textContent = 'Vibration';
-
-            var currentVal = alertStyleItem.get();
-            if (currentVal === "1" || currentVal === "2") {
-                alertStyleItem.set("0");
-            }
-        }
-    }
-
-    function toggleAudioSettings() {
-        var platform = clayConfig.meta.activeWatchInfo ? clayConfig.meta.activeWatchInfo.platform : 'aplite';
-        var alertStyleItem = clayConfig.getItemByMessageKey('AlertStyle');
-        var soundTune = clayConfig.getItemByMessageKey('SoundTune');
-        var overrideVolume = clayConfig.getItemByMessageKey('OverrideVolume');
-        var alertVolume = clayConfig.getItemByMessageKey('AlertVolume');
-
-        if (platform !== 'emery') {
-            if (soundTune) soundTune.hide();
-            if (overrideVolume) overrideVolume.hide();
-            if (alertVolume) alertVolume.hide();
-            return;
-        }
-
-        var alertStyle = alertStyleItem.get();
-
-        // Check if the current alert style permits sound
-        if (alertStyle === "1" || alertStyle === "2") {
-            if (soundTune) soundTune.show();
-            if (overrideVolume) overrideVolume.show();
-
-            // Only show the volume slider if the override toggle is enabled
-            var isOverrideEnabled = overrideVolume && (overrideVolume.get() === true || overrideVolume.get() === "1" || overrideVolume.get() === 1);
-
-            if (isOverrideEnabled) {
-                if (alertVolume) alertVolume.show();
+        if (wfToggle && suppressQuiet && timeoutWf && respectQuiet) {
+            if (wfToggle.get()) {
+                suppressQuiet.show();
+                timeoutWf.show();
+                respectQuiet.show();
             } else {
-                if (alertVolume) alertVolume.hide();
+                suppressQuiet.hide();
+                timeoutWf.hide();
+                respectQuiet.hide();
             }
-
-        } else {
-            if (soundTune) soundTune.hide();
-            if (overrideVolume) overrideVolume.hide();
-            if (alertVolume) alertVolume.hide();
-        }
-    }
-
-    function injectTextArea() {
-        var customJokesInput = clayConfig.getItemByMessageKey('CustomJokesText');
-        if (!customJokesInput || !customJokesInput.$element) return;
-
-        var inputEl = customJokesInput.$element[0].querySelector('input');
-        if (inputEl && inputEl.tagName.toLowerCase() === 'input') {
-            var textarea = document.createElement('textarea');
-            textarea.rows = 8;
-            textarea.className = inputEl.className;
-            textarea.style.width = '100%';
-            textarea.style.minHeight = '150px';
-            textarea.style.resize = 'vertical';
-            textarea.style.fontFamily = 'monospace';
-
-            textarea.value = (customJokesInput.get() || "").split('|').join('\n');
-
-            textarea.addEventListener('keydown', function(e) {
-                if (e.keyCode === 13 || e.key === 'Enter') {
-                    e.stopPropagation();
-                }
-            }, true);
-
-            textarea.addEventListener('input', function() {
-                var safeString = textarea.value.split('\n').join('|');
-                customJokesInput.set(safeString);
-            });
-
-            customJokesInput.on('change', function() {
-                var expected = textarea.value.split('\n').join('|');
-                if (customJokesInput.get() !== expected) {
-                    textarea.value = (customJokesInput.get() || "").split('|').join('\n');
-                }
-            });
-
-            inputEl.style.display = 'none';
-            inputEl.parentNode.insertBefore(textarea, inputEl);
-            customJokesInput._injectedTextArea = textarea;
         }
     }
 
     clayConfig.on(clayConfig.EVENTS.AFTER_BUILD, function() {
-        var modeDropdown = clayConfig.getItemByMessageKey('ScheduleMode');
-        if (modeDropdown) {
-            modeDropdown.on('change', toggleScheduleSettings);
-        }
-        toggleScheduleSettings();
+        toggleHardwareSettings();
+        toggleWatchfaceSettings();
 
-        var alertStyleDropdown = clayConfig.getItemByMessageKey('AlertStyle');
-        if (alertStyleDropdown) {
-            alertStyleDropdown.on('change', toggleAudioSettings);
-        }
-
-        // Bind the change event for the Override System Volume toggle
-        var overrideVolumeToggle = clayConfig.getItemByMessageKey('OverrideVolume');
-        if (overrideVolumeToggle) {
-            overrideVolumeToggle.on('change', toggleAudioSettings);
-        }
-
-        setupAlertOptions();
-        toggleAudioSettings();
-
-        injectTextArea();
-
-        var clearBtn = clayConfig.getItemByMessageKey('ClearCustomJokesBtn');
-        if (clearBtn) {
-            clearBtn.on('click', function() {
-                var customJokesInput = clayConfig.getItemByMessageKey('CustomJokesText');
-                if (customJokesInput) {
-                    customJokesInput.set("");
-                    if (customJokesInput._injectedTextArea) {
-                        customJokesInput._injectedTextArea.value = "";
-                    }
-                }
+        var wfToggle = clayConfig.getItemByMessageKey('enable_watchface');
+        if (wfToggle) {
+            wfToggle.on('change', function() {
+                toggleWatchfaceSettings();
             });
         }
     });

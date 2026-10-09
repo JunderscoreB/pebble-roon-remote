@@ -31,18 +31,46 @@ module.exports = [
   "type": "section",
   "items": [
     {
+      "type": "toggle",
+      "messageKey": "enable_watchface",
+      "defaultValue": false,
+      "label": "Watchface Mode",
+      "description": "Displays clock time and current playback in a watchface layout."
+    },
+    {
+      "type": "toggle",
+      "messageKey": "timeout_to_app_wf",
+      "defaultValue": true,
+      "label": "Timeout to App Watchface",
+      "description": "Inactivity timeouts drop to the idle Watchface instead of closing the app entirely."
+    },
+    {
+      "type": "toggle",
+      "messageKey": "respect_quiet_time",
+      "defaultValue": true,
+      "label": "Hide Music on Quiet Time",
+      "description": "In watchface mode, hides music info when Quiet Time is active."
+    },
+    {
+      "type": "toggle",
+      "messageKey": "suppress_gesture_quiet",
+      "defaultValue": false,
+      "label": "Suppress Wake on Quiet Time",
+      "description": "Disables wrist flicks from waking the watchface to Gesture Mode when Quiet Time is active."
+    },
+    {
       "type": "select",
       "messageKey": "timeout_app",
       "defaultValue": "0",
       "label": "App Inactivity Timeout",
-      "description": "Closes the app automatically if no buttons are pressed.",
+      "description": "Switches to Watchface or closes the app if no buttons/gestures are used.",
       "options": [
         { "label": "Infinite (Never close)", "value": "0" },
-        { "label": "1 Minute", "value": "1" },
-        { "label": "5 Minutes", "value": "5" },
-        { "label": "15 Minutes", "value": "15" },
-        { "label": "30 Minutes", "value": "30" },
-        { "label": "1 Hour", "value": "60" }
+        { "label": "15 Seconds", "value": "15" },
+        { "label": "30 Seconds", "value": "30" },
+        { "label": "1 Minute", "value": "60" },
+        { "label": "2 Minutes", "value": "120" },
+        { "label": "5 Minutes", "value": "300" }
       ]
     },
     {
@@ -53,10 +81,11 @@ module.exports = [
       "description": "Closes the app if the Bridge connection or Bluetooth drops.",
       "options": [
         { "label": "Infinite (Never close)", "value": "0" },
-        { "label": "1 Minute", "value": "1" },
-        { "label": "5 Minutes", "value": "5" },
-        { "label": "15 Minutes", "value": "15" },
-        { "label": "30 Minutes", "value": "30" }
+        { "label": "15 Seconds", "value": "15" },
+        { "label": "30 Seconds", "value": "30" },
+        { "label": "1 Minute", "value": "60" },
+        { "label": "2 Minutes", "value": "120" },
+        { "label": "5 Minutes", "value": "300" }
       ]
     }
   ]
@@ -95,6 +124,20 @@ module.exports = [
         { "label": "Marquee (Scroll)", "value": "1" },
         { "label": "Word Wrap (Multi-line)", "value": "2" }
       ]
+    },
+    {
+      "type": "toggle",
+      "messageKey": "enable_accel_playpause",
+      "defaultValue": true,
+      "label": "Wrist Flick Play/Pause",
+      "description": "Flick your wrist to toggle playback."
+    },
+    {
+      "type": "toggle",
+      "messageKey": "enable_flick_vibes",
+      "defaultValue": true,
+      "label": "Vibrate on Wrist Flick",
+      "description": "Provide a tactile vibration when waking to Gesture Mode."
     },
     {
       "type": "select",
