@@ -6,14 +6,15 @@ Control your Roon music endpoints directly from your wrist. This app works with 
 
 ### ⌚ Features
 * **Customizable Track/Volume Controls:** Map your Up/Down buttons to instantly control volume (with a seamless quick-flash UI overlay) or change tracks.
-* **Advanced Touch Support:** Capacitive touch support for Pebble Time 2 (Emery platform) and Pebble Round 2. Tap anywhere to Play/Pause, touch and hold to Pause All, or use multi-directional swipes to change tracks and zones. Includes a safety toggle to disable touch.
+* **Advanced Touch Support:** Capacitive touch support for Pebble Time 2 and Pebble Round 2. Tap anywhere to Play/Pause, touch and hold to Pause All, hold and swipe for volume control, or use multi-directional swipes to change tracks and zones. Includes a safety toggle to disable touch.
 * **Zone Selection:** View and cycle through active Roon zones directly from the watch with rapid, debounced network updates.
 * **Live Metadata:** See Artist, Track, and Zone Name in real-time.
 * **UI Customization:** Choose your preferred font size and toggle marquee scrolling for long track names.
-* **Smart Timeouts:** Preserve battery with customizable idle and disconnect timeouts (now supporting 1-minute intervals) that automatically exit the app when inactive.
+* **Smart Timeouts:** Preserve battery with customizable idle and disconnect timeouts that automatically exit the app when inactive.
+* **Watchface Mode:** Mimics the companion watchface app so you can see the time (and also prevent accidental touches)
 * **Low Latency:** Optimized for instant feedback using the PebbleDict API and optimistic UI rendering for Play/Pause and Volume controls.
 
-### 🚀 [Download Latest Version (v1.2.1)](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
+### 🚀 [Download Latest Version](https://github.com/JunderscoreB/pebble-roon-remote/releases/latest)
 ### 💬 [Join the Roon Community Discussion](https://community.roonlabs.com/t/pebble-smartwatch-app-and-corresponding-roon-extension/313874)
 
 ---
